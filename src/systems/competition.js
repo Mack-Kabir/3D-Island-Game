@@ -61,7 +61,7 @@ export class Competition {
     RIVALS.forEach((r, i) => {
       const sp = w.competitionSpots[i];
       const c = new Character(r.look);
-      c.hold('rod', 'fiberglass');
+      c.hold('rod', 'carbon');
       c.root.position.set(sp.x, w.groundAt(sp.x, sp.z), sp.z);
       c.root.rotation.y = sp.yaw;
       w.dynamic.add(c.root);

@@ -1,7 +1,8 @@
 import { RODS, BAITS, WEAPONS, BOATS, PETS, DECOR } from './gear.js';
 import { COSMETICS } from './cosmetics.js';
+import { CROPS, SEED_PRICES, ANIMALS, IRRIGATION } from './items.js';
 
-// kind: item | rod | weapon | boat | cosmetic | pet
+// kind: item | rod | weapon | boat | cosmetic | pet | animal | irrigation
 const rod = (id) => {
   const r = RODS.find((x) => x.id === id);
   return { kind: 'rod', id, price: r.price, gems: r.gems, level: r.level };
@@ -23,16 +24,25 @@ const item = (id, price, opts = {}) => ({ kind: 'item', id, price, qty: 1, level
 export const SHOPS = {
   tackle: {
     name: "Ross's Tackle Shop", sells: ['fish'],
-    stock: [rod('oak'), rod('fiberglass'), rod('carbon'), bait('bait_worm'), bait('bait_shrimp'), bait('bait_glow')],
+    stock: [rod('oak'), rod('carbon'), bait('bait_worm'), bait('bait_cricket'), bait('bait_shrimp'), bait('bait_spinner'), bait('bait_glow')],
   },
   fishmarket: { name: "Megan's Fish Market", sells: ['fish'], bonus: 0.1, stock: [item('grilled_fish', 60)] },
   general: {
-    name: "Chloe's Fruit Stand", sells: ['fruit', 'product', 'collectible'],
+    name: "Chloe's Fruit Stand", sells: ['fruit', 'crop', 'animal', 'ingredient', 'product', 'collectible'],
     stock: [
-      item('seed_strawberry', 8, { qty: 4 }), item('seed_sugarcane', 12, { qty: 3 }), item('seed_pineapple', 24, { qty: 2 }),
-      item('seed_watermelon', 40, { qty: 2, level: 4 }), item('seed_dragonfruit', 120, { qty: 2, level: 9 }),
-      item('sapling_banana', 90, { level: 3 }), item('sapling_coconut', 130, { level: 4 }), item('sapling_mango', 200, { level: 6 }),
-      item('shovel', 120, { once: true }), item('watering_can', 60, { once: true }),
+      item('watering_can', 60, { once: true }), item('shovel', 120, { once: true }),
+      // seeds (packs of 4, or 2 for slow crops) and saplings, in unlock order
+      ...Object.entries(CROPS)
+        .filter(([, c]) => c.kind !== 'tree')
+        .sort((a, b) => a[1].level - b[1].level)
+        .map(([id, c]) => item(c.seed, SEED_PRICES[id], { qty: c.hours >= 10 ? 2 : 4, level: c.level })),
+      ...Object.entries(CROPS)
+        .filter(([, c]) => c.kind === 'tree')
+        .sort((a, b) => a[1].level - b[1].level)
+        .map(([id, c]) => item(c.seed, SEED_PRICES[id], { level: c.level })),
+      item('animal_feed', 25, { qty: 5, level: 3 }), item('fertilizer', 60, { qty: 3, level: 4 }), item('super_fertilizer', 200, { qty: 3, level: 10 }),
+      ...Object.entries(ANIMALS).map(([id, a]) => ({ kind: 'animal', id, price: a.price, level: a.level })),
+      ...IRRIGATION.filter((x) => x.level > 0).map((x) => ({ kind: 'irrigation', id: x.id, level: x.reqLevel, irr: x.level, price: x.price, gems: x.gems })),
     ],
   },
   boutique: {
@@ -49,18 +59,18 @@ export const SHOPS = {
       ...Object.values(DECOR).map((d) => ({ kind: 'item', id: 'decor_' + d.id, price: d.price, gems: d.gems, level: d.level, qty: 1 })),
     ],
   },
-  shipwright: { name: "Captain Jack's Shipyard", sells: [], stock: BOATS.filter((b) => b.tier > 0).map((b) => ({ kind: 'boat', id: b.id, price: b.price, gems: b.gems, level: b.level })) },
+  shipwright: { name: "Captain Jack's Shipyard", sells: [], stock: [...BOATS.filter((b) => b.tier > 0).map((b) => ({ kind: 'boat', id: b.id, price: b.price, gems: b.gems, level: b.level })), rod('deepsea'), bait('bait_squid'), bait('bait_jig')] },
   reef: {
     name: "Sarah's Reef Shop", sells: ['fish', 'collectible'],
-    stock: [rod('coral'), bait('bait_shrimp'), bait('bait_magic'), weapon('coral_saber'), cos('dress_mermaid')],
+    stock: [rod('carbon'), bait('bait_shrimp'), bait('bait_squid'), bait('bait_magic'), weapon('coral_saber'), cos('dress_mermaid')],
   },
   forge: {
     name: "Hank's Forge", sells: ['treasure', 'collectible'],
-    stock: [weapon('cutlass'), weapon('coral_saber'), weapon('ember_blade'), rod('ember'), cos('ember_jacket')],
+    stock: [weapon('cutlass'), weapon('coral_saber'), weapon('ember_blade'), bait('bait_spinner'), cos('ember_jacket')],
   },
   mystic: {
-    name: "Grace's Hut", sells: ['fish', 'fruit'],
-    stock: [item('health_tonic', 90, { qty: 1 }), bait('bait_glow'), bait('bait_magic'), item('seed_dragonfruit', 100, { qty: 2, level: 9 })],
+    name: "Grace's Hut", sells: ['fish', 'fruit', 'crop'],
+    stock: [item('health_tonic', 90, { qty: 1 }), bait('bait_glow'), bait('bait_jig'), bait('bait_magic'), item('seed_dragonfruit', 100, { qty: 2, level: 9 })],
   },
   night: {
     name: "Madison's Moonlit Wares", sells: ['fish', 'treasure'], bonus: 0.15,
@@ -72,7 +82,7 @@ export const SHOPS = {
   },
   pirate: {
     name: "Pete's Plunder", sells: ['treasure', 'fish'],
-    stock: [cos('pirate_hat'), cos('pirate_vest'), cos('pirate_pants'), cos('eyepatch'), item('health_tonic', 110), bait('bait_magic')],
+    stock: [cos('pirate_hat'), cos('pirate_vest'), cos('pirate_pants'), cos('eyepatch'), item('health_tonic', 110), bait('bait_squid'), bait('bait_magic')],
   },
 };
 

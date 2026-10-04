@@ -1,20 +1,26 @@
-// zone: size of the catch bar (0-1). luck: rarity boost. speed: bite-wait multiplier. reel: progress speed.
+// power: how strong a fish it can land (see fishPower). luck: rarity boost. speed: bite-wait multiplier. reel: line pulled per tap.
 export const RODS = [
-  { id: 'bamboo', name: 'Bamboo Rod', icon: '🎋', zone: 0.25, luck: 0, speed: 1, reel: 1, price: 0, level: 1, color: '#c9a65b', desc: 'Light and humble. Every legend starts here.' },
-  { id: 'oak', name: 'Oak Rod', icon: '🎣', zone: 0.28, luck: 0.12, speed: 0.9, reel: 1.06, price: 280, level: 3, color: '#8a5a32', desc: 'Sturdy hardwood with a better grip.' },
-  { id: 'fiberglass', name: 'Fiberglass Rod', icon: '🎣', zone: 0.31, luck: 0.25, speed: 0.82, reel: 1.12, price: 950, level: 6, color: '#e2e6e8', desc: 'Flexible and forgiving.' },
-  { id: 'carbon', name: 'Carbon Pro', icon: '🎣', zone: 0.33, luck: 0.4, speed: 0.74, reel: 1.2, price: 2600, level: 10, color: '#2d2d36', desc: 'Pro-grade. Feels like cheating.' },
-  { id: 'coral', name: 'Coral Rod', icon: '🪸', zone: 0.35, luck: 0.6, speed: 0.68, reel: 1.26, price: 4800, gems: 15, level: 13, color: '#ff7f91', desc: 'Reef fish adore its colours.' },
-  { id: 'ember', name: 'Ember Rod', icon: '🔥', zone: 0.37, luck: 0.8, speed: 0.62, reel: 1.32, price: 9500, gems: 30, level: 17, color: '#e85a2a', desc: 'Forged in volcano fire.' },
-  { id: 'golden', name: 'Golden Rod', icon: '✨', zone: 0.4, luck: 1.05, speed: 0.56, reel: 1.4, price: 0, gems: 180, level: 21, color: '#f2c230', desc: 'Pure gold. Legends can\'t resist.' },
-  { id: 'leviathan', name: "Leviathan's Rod", icon: '🔱', zone: 0.44, luck: 1.5, speed: 0.5, reel: 1.5, price: 0, level: 1, reward: true, color: '#3fb9b0', desc: 'Taken from Captain Blackfin. Hums with the sea\'s power.' },
+  { id: 'bamboo', name: 'Bamboo Rod', icon: '🎋', power: 1, luck: 0, speed: 1, reel: 1, price: 0, level: 1, color: '#c9a65b', desc: 'Light and humble. Every legend starts here.' },
+  { id: 'oak', name: 'Oak Rod', icon: '🎣', power: 3, luck: 0.15, speed: 0.9, reel: 1.08, price: 350, level: 3, color: '#8a5a32', desc: 'Sturdy hardwood. Lands uncommon and most rare fish.' },
+  { id: 'carbon', name: 'Carbon Pro', icon: '🎣', power: 5, luck: 0.4, speed: 0.78, reel: 1.2, price: 2600, level: 8, color: '#2d2d36', desc: 'Pro-grade and strong enough for epic fish.' },
+  { id: 'deepsea', name: 'Deep-Sea Trolling Rod', icon: '🚤', power: 8, luck: 0.8, speed: 0.7, reel: 1.45, price: 6500, gems: 20, level: 11, boatOnly: true, color: '#3f6fa8', desc: 'A heavy trolling rod — only usable from your boat. Deep-sea fish bite twice as often.' },
+  { id: 'golden', name: 'Golden Rod', icon: '✨', power: 7, luck: 1.05, speed: 0.6, reel: 1.38, price: 0, gems: 180, level: 16, color: '#f2c230', desc: 'Pure gold. Legends can\'t resist it.' },
 ];
+/** Old rods from earlier versions map onto the new line-up. */
+export const ROD_MIGRATION = { fiberglass: 'oak', coral: 'carbon', ember: 'carbon', leviathan: 'golden' };
 
+// Lures: luck = rarity boost, speed = bite-wait multiplier, upgrade = chance of a one-tier-better catch,
+// slip = chance the fish throws the hook. Extras: dayLuck, nightLuck/nightUpgrade, rain (rain-fish boost),
+// deep (deep-sea fish boost), junk (junk multiplier). model drives the lure you see fly when casting.
 export const BAITS = [
-  { id: 'bait_worm', luck: 0, speed: 1, price: 20, pack: 10, level: 1 },
-  { id: 'bait_shrimp', luck: 0.15, speed: 0.85, price: 60, pack: 10, level: 3 },
-  { id: 'bait_glow', luck: 0.1, nightLuck: 0.5, speed: 0.8, price: 140, pack: 10, level: 6 },
-  { id: 'bait_magic', luck: 0.6, speed: 0.7, price: 0, gems: 12, pack: 5, level: 10 },
+  { id: 'bait_worm', luck: 0, speed: 1, upgrade: 0.05, slip: 0.05, price: 20, pack: 10, level: 1, model: 'worm', color: '#e88aa0' },
+  { id: 'bait_cricket', luck: 0.05, speed: 0.75, upgrade: 0.05, slip: 0.04, junk: 0.7, price: 35, pack: 10, level: 2, model: 'cricket', color: '#6b8a3a' },
+  { id: 'bait_shrimp', luck: 0.15, speed: 0.85, upgrade: 0.15, slip: 0.03, price: 60, pack: 10, level: 3, model: 'shrimp', color: '#f29a6a' },
+  { id: 'bait_spinner', luck: 0.1, dayLuck: 0.3, speed: 0.8, upgrade: 0.12, slip: 0.03, junk: 0.5, price: 110, pack: 8, level: 5, model: 'spinner', color: '#d9dee6' },
+  { id: 'bait_glow', luck: 0.1, nightLuck: 0.5, nightUpgrade: 0.3, speed: 0.8, upgrade: 0.1, slip: 0.03, price: 140, pack: 10, level: 6, model: 'glow', color: '#7ff0d0' },
+  { id: 'bait_squid', luck: 0.2, deep: 2, speed: 0.85, upgrade: 0.18, slip: 0.02, price: 180, pack: 8, level: 7, model: 'squid', color: '#f4d8e4' },
+  { id: 'bait_jig', luck: 0.15, rain: 2.5, rainLuck: 0.4, speed: 0.8, upgrade: 0.15, slip: 0.02, price: 220, pack: 8, level: 9, model: 'jig', color: '#5fa8e8' },
+  { id: 'bait_magic', luck: 0.6, speed: 0.7, upgrade: 0.35, slip: 0.01, junk: 0.2, price: 0, gems: 12, pack: 5, level: 10, model: 'magic', color: '#f2c230' },
 ];
 
 export const WEAPONS = [

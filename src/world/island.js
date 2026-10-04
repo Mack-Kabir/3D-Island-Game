@@ -142,7 +142,7 @@ export class IslandWorld {
     for (const pr of this.props) out.push({ ...pr, key: pr });
     if (this.boatGroup && this.game.boatTier() > 0) {
       const boat = BOATS[this.game.boatTier()];
-      out.push({ key: this.boatGroup, pos: this.boatAnchor, h: 1.2, tip: { title: `Your boat — ${boat.name}`, desc: `Used to sail to other islands. ${boat.desc}\nWalk along the dock next to it and press E.` } });
+      out.push({ key: this.boatGroup, pos: this.boatAnchor, h: 1.2, tip: { title: `Your boat — ${boat.name}`, desc: `Sail to other islands — or take it out to fish in deep water, where deep-sea fish bite far more often. ${boat.desc}\nWalk along the dock next to it and press E.` } });
     } else if (this.dock && this.boatAnchor) {
       out.push({ key: 'mooring', pos: this.boatAnchor, h: 0.5, tip: { title: 'Empty mooring', desc: 'Your boat will be tied up here.\nBoats are sold by Captain Jack on Palmora — they let you sail to other islands.' } });
     }
@@ -190,14 +190,15 @@ export class IslandWorld {
     this.boatGroup.rotation.y = rot;
     this.dynamic.add(this.boatGroup);
     this.setBoatModel(this.game.boatTier());
+    this.boardPos = d.end.clone().addScaledVector(this.dock.dir, -6).addScaledVector(side, (opts.boatSide ?? 1) * 1.6);
     this.interact({
-      pos: d.end.clone().addScaledVector(this.dock.dir, -6).addScaledVector(side, (opts.boatSide ?? 1) * 1.6),
+      pos: this.boardPos,
       r: 2.0,
       priority: 1,
       enabled: () => this.game.boatTier() > 0,
-      label: () => 'Board your boat & set sail',
+      label: () => 'Use your boat (fish or sail)',
       icon: '⛵',
-      action: () => this.game.openTravel(),
+      action: () => this.game.boatMenu(),
     });
     for (const s of [-1, 1]) P.lamppost(b, sx + side.x * 1.9 * s, y - 0.1, sz + side.z * 1.9 * s, this.glowPoints);
     return this.dock;
@@ -745,10 +746,11 @@ const LAYOUTS = {
     nature: { palms: 55, trees: 26, pines: 10, bushes: 60, rocks: 26, grass: 2200 },
     zones(w) {
       w.flatten(0, 6, 15, 2.3, 10); // plaza
-      w.flatten(-38, -6, 13, 2.6, 9); // homestead
+      w.flatten(-38, -1, 19, 2.6, 7); // homestead: house, kitchen, 50 farm patches, animal pens
       w.flatten(25, 14, 6, 2.3, 6); // Bob
       w.path(0, 6, 0, 46, 2.0);
-      w.path(0, 6, -38, -6, 1.8);
+      w.path(0, 6, -22, -8, 1.8);
+      w.path(-22, -8, -36, -9, 1.6);
       w.path(0, 6, 25, 14, 1.6);
       w.path(8, -4, 28, -30, 1.4);
     },
@@ -805,11 +807,19 @@ const LAYOUTS = {
       const hx = -38;
       const hz = -6;
       w.homestead = { x: hx, z: hz, y: 2.6 };
-      P.fence(b, hx - 11, hz - 10, hx + 11, hz - 10, h);
-      P.fence(b, hx - 11, hz - 10, hx - 11, hz + 11, h);
-      P.fence(b, hx - 11, hz + 11, hx - 3, hz + 11, h);
-      P.signpost(b, hx + 9, h(hx + 9, hz + 12), hz + 12, -0.5);
-      w.landmark(hx + 9, hz + 12, 'Your Homestead', 'Your home, farm plots and campfire. Press E at the house or campfire.', 1.5);
+      // fenced farmland with a gate on the east side, facing the village
+      const fx0 = hx - 15;
+      const fx1 = hx + 16;
+      const fz0 = hz - 14;
+      const fz1 = hz + 21.5;
+      P.fence(b, fx0, fz0, fx1, fz0, h);
+      P.fence(b, fx0, fz0, fx0, fz1, h);
+      P.fence(b, fx0, fz1, fx1, fz1, h);
+      P.fence(b, fx1, fz1, fx1, hz, h);
+      P.fence(b, fx1, hz - 4, fx1, fz0, h);
+      w.occupy(hx + 0.5, hz + 3.75, 24);
+      P.signpost(b, fx1 + 1, h(fx1 + 1, hz + 1), hz + 1, -0.5);
+      w.landmark(fx1 + 1, hz + 1, 'Your Homestead', 'Your home, kitchen, farm fields and animal pens.\nMore soil patches unlock as you level up.', 1.5);
 
       // dock & waterfront
       const dock = w.makeDock(b, 0, 30, 0, 1);
@@ -883,7 +893,7 @@ const LAYOUTS = {
       const shelly = P.house(b, 20, h(20, -6), -6, { w: 4.4, d: 4, h: 2.8, wall: '#e0f6f2', roof: '#ff7f91', rot: -1.2, roofStyle: 'thatch', awning: '#58b4a5' });
       w.addCollider(shelly.collider);
       w.sign('REEF SHOP', shelly, { bg: '#d9f0ec', w: 2 });
-      w.landmark(20, -6, "Sarah's Reef Shop", 'Coral Rod, bait and reef gear. Sarah buys fish and coral.');
+      w.landmark(20, -6, "Sarah's Reef Shop", 'Rods, lures and reef gear. Sarah buys fish and coral.');
       w.spots.shelly = { x: 16.5, z: -4.6, yaw: -1.2, wander: 1 };
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2;
@@ -943,7 +953,7 @@ const LAYOUTS = {
       w.addCollider(forge.collider);
       w.occupy(-9, 27, 6);
       w.sign("HANK'S FORGE", forge, { bg: '#3a2f33', fg: '#ffb347' });
-      w.landmark(-9, 27, "Hank's Forge", 'Weapons and the Ember Rod. Hank buys treasure.');
+      w.landmark(-9, 27, "Hank's Forge", 'Weapons and spinner lures. Hank buys treasure.');
       P.campfire(b, -4.5, h(-4.5, 29.5), 29.5, glow); // anvil fire
       w.circle(-4.5, 29.5, 0.7);
       P.barrel(b, -12.5, h(-12.5, 31), 31);

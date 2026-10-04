@@ -21,7 +21,7 @@ export class CombatSystem {
   }
   maxHp() {
     const s = this.s;
-    return 100 + (s.level - 1) * 6 + (s.pet ? PETS_BY_ID[s.pet]?.hp ?? 0 : 0);
+    return 100 + (s.level - 1) * 6 + (s.house?.level || 0) * 15 + (s.pet ? PETS_BY_ID[s.pet]?.hp ?? 0 : 0);
   }
   playerAlive() {
     return this.s && this.s.hp > 0;

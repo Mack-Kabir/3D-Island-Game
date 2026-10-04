@@ -19,6 +19,24 @@ export class Input {
     this.virtual = new Set(); // touch buttons held
     this.virtualPressed = new Set();
     this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    // presses anywhere on the game view or the fishing widgets (not on buttons) — used to hook & reel
+    this.pointer = { down: false, pressed: false };
+    const reelTarget = (t) => t === canvas || (t?.closest?.('.reel-ui, .bite-mark, .fish-hint') && !t.closest('button'));
+    window.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (!reelTarget(e.target)) return;
+        this.pointer.down = true;
+        this.pointer.pressed = true;
+      },
+      true,
+    );
+    const release = () => (this.pointer.down = false);
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+    // a mouse released outside the window never sends pointerup — catch it on the next move
+    window.addEventListener('pointermove', (e) => e.pointerType === 'mouse' && !(e.buttons & 1) && release(), true);
 
     window.addEventListener('keydown', (e) => {
       if (isTyping(e.target)) return;
@@ -35,6 +53,7 @@ export class Input {
     });
     window.addEventListener('blur', () => {
       this.keys.clear();
+      this.pointer.down = false;
       this.mouse.down = false;
       this.mouse.dragging = false;
     });
@@ -113,7 +132,11 @@ export class Input {
   }
   /** Reel / hold action (fishing minigame). */
   holding() {
-    return this.down('Space') || this.down('KeyE') || this.mouse.down || this.virtual.has('Reel');
+    return this.down('Space') || this.down('KeyE') || this.mouse.down || this.pointer.down || this.virtual.has('Reel');
+  }
+  /** A fresh hook / reel press this frame from any input. */
+  reelPressed() {
+    return this.anyPressed('KeyE', 'Space', 'Enter') || this.pointer.pressed || this.virtualPressed.has('Reel');
   }
   axis() {
     let x = 0;
@@ -140,5 +163,6 @@ export class Input {
     this.mouse.dy = 0;
     this.mouse.wheel = 0;
     this.mouse.clicked = false;
+    this.pointer.pressed = false;
   }
 }

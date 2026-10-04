@@ -15,6 +15,8 @@ import { Weather } from './systems/weather.js';
 import { AudioSystem } from './systems/audio.js';
 import { QuestSystem } from './systems/quests.js';
 import { FishingSystem } from './systems/fishing.js';
+import { BoatTrip } from './systems/boatfish.js';
+import { FarmTools } from './systems/farmtools.js';
 import { HomeSystem } from './systems/home.js';
 import { CombatSystem } from './systems/combat.js';
 import { Competition } from './systems/competition.js';
@@ -23,7 +25,7 @@ import { UI } from './ui/ui.js';
 import { Dialogue } from './ui/dialogue.js';
 import { showTitle, showCreator, hideScreens } from './ui/screens.js';
 import { ISLANDS } from './data/islands.js';
-import { ITEMS, RECIPES, RECIPE_ALIASES } from './data/items.js';
+import { ITEMS, RECIPES, RECIPE_ALIASES, ANIMALS, IRRIGATION, FISH_INPUTS, fishFor } from './data/items.js';
 import { FISH, TIERS, tierIndex } from './data/fish.js';
 import { RODS_BY_ID, WEAPONS, WEAPONS_BY_ID, BOATS_BY_ID, PETS_BY_ID } from './data/gear.js';
 import { COSMETICS } from './data/cosmetics.js';
@@ -66,6 +68,8 @@ export class Game {
     this.fx = new FX(this);
     this.quests = new QuestSystem(this);
     this.fishing = new FishingSystem(this);
+    this.boatTrip = new BoatTrip(this);
+    this.farmTools = new FarmTools(this);
     this.home = new HomeSystem(this);
     this.combat = new CombatSystem(this);
     this.competition = new Competition(this);
@@ -80,6 +84,9 @@ export class Game {
     this.initPortraits();
     this.applySettings();
     window.addEventListener('resize', () => this.resize());
+    // phones report the new size a moment after rotating
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 250));
+    screen.orientation?.addEventListener?.('change', () => setTimeout(() => this.resize(), 250));
     this.resize();
 
     this.events.on('dawn', () => this.mode === 'play' && this.ui.toast('☀️ Good morning! A new day on the islands.', 'info'));
@@ -204,7 +211,7 @@ export class Game {
     s.streak = s.lastLogin === yesterday ? s.streak + 1 : 1;
     s.lastLogin = today;
     const day = ((s.streak - 1) % 7) + 1;
-    const reward = { coins: 40 + day * 30, gems: day === 7 ? 15 : day >= 4 ? 2 : 0 };
+    const reward = { coins: day === 7 ? 120 : 10 + day * 10, gems: day === 7 ? 10 : day >= 4 ? 1 : 0 };
     setTimeout(() => {
       this.ui.banner(`Daily reward · Day ${day} streak`, `+${reward.coins} coins${reward.gems ? ` +${reward.gems} gems` : ''}`, '🎁');
       this.give(reward, { quiet: true });
@@ -214,6 +221,7 @@ export class Game {
   quitToTitle() {
     this.save();
     this.fishing.cleanup();
+    this.boatTrip.reset();
     this.home.cancelPlacing();
     if (this.competition.active) this.competition.end(true);
     this.state = null;
@@ -227,7 +235,8 @@ export class Game {
     if (!this.state || this.mode !== 'play') return;
     const p = this.player;
     this.state.island = this.world.id;
-    this.state.pos = { x: p.pos.x, z: p.pos.z, yaw: p.yaw };
+    const at = this.boatTrip.active ? this.boatTrip.savePos() : p.pos;
+    this.state.pos = { x: at.x, z: at.z, yaw: p.yaw };
     const ok = saveGame(this.state);
     if (manual) this.ui.toast(ok ? '💾 Game saved!' : 'Could not save (browser storage blocked).', ok ? 'good' : 'warn');
   }
@@ -235,6 +244,7 @@ export class Game {
   // ── world ────────────────────────────────────────
   loadWorld(id) {
     if (this.world) {
+      this.boatTrip.reset();
       this.home.detach();
       this.world.dispose();
     }
@@ -258,6 +268,17 @@ export class Game {
     return (w[id] ||= { day: 0, taken: [], dug: [], extra: [] });
   }
 
+  /** Choice at the boat: go fishing in deep water or sail to another island. */
+  boatMenu() {
+    const opt = (icon, title, sub) => `<span class="emoji" style="font-size:30px" aria-hidden="true">${icon}</span><span class="slot-name">${title}<small class="muted"> ${sub}</small></span>`;
+    this.ui.openPicker({
+      title: 'Your boat',
+      items: ['fish', 'sail'],
+      render: (id) => (id === 'fish' ? opt('🎣', 'Fish from the boat', 'Deep-sea fish bite far more often') : opt('⛵', 'Set sail', 'Travel to another island')),
+      onPick: (id) => (id === 'fish' ? this.boatTrip.start() : this.openTravel()),
+    });
+  }
+
   openTravel(fromNpc = false) {
     if (this.boatTier() === 0) {
       this.ui.toast('You need a boat! Captain Jack sells them at the Palmora dock.', 'warn');
@@ -275,6 +296,7 @@ export class Game {
     if (this.travelling) return;
     this.travelling = true;
     this.fishing.cleanup();
+    this.boatTrip.reset();
     this.home.cancelPlacing();
     const isl = ISLANDS[id];
     this.audio.sfx('travel');
@@ -313,6 +335,7 @@ export class Game {
     const s = this.state;
     await this.ui.fade(true, 700);
     const skipped = this.time.sleepUntilMorning();
+    this.events.emit('sleep', {});
     s.hp = this.combat.maxHp();
     this.weather.rain = this.weather.intensity();
     await new Promise((r) => setTimeout(r, 600));
@@ -345,8 +368,9 @@ export class Game {
     this.state.gems -= gems;
     this.ui.refreshHud();
   }
+  /** XP needed to go from level l to l+1: 200 at first, climbing steeply later on. */
   xpForLevel(l) {
-    return Math.round(60 + l * l * 22 + l * 40);
+    return Math.round((200 + 90 * Math.pow(l - 1, 1.75)) / 10) * 10;
   }
   addXP(n) {
     const s = this.state;
@@ -399,13 +423,16 @@ export class Game {
         if (!s.cosmetics.includes(id)) s.cosmetics.push(id);
         this.ui.toast(`👕 New outfit: ${COSMETICS[id].name} — press C to wear it`, 'good');
       }
+    if (r.buildings) for (const id of r.buildings) this.home.setBuilt(id);
+    if (r.animals) for (const [id, n] of Object.entries(r.animals)) for (let i = 0; i < n; i++) this.home.addAnimal(id);
     if (r.flag) s.flags[r.flag] = true;
     if (r.xp) this.addXP(r.xp);
     this.quests.refresh();
     this.ui.refreshHud();
   }
 
-  recordCatch(f, weight, { perfect }) {
+  recordCatch(f, weight, opts = {}) {
+    const { perfect } = opts;
     const s = this.state;
     const dex = s.fishdex[f.id];
     const isNew = !dex;
@@ -417,7 +444,7 @@ export class Game {
     const xp = TIERS[f.tier].xp + (isNew ? 10 : 0);
     let perfectBonus = 0;
     if (perfect && f.tier !== 'junk') {
-      perfectBonus = Math.max(5, Math.round(f.price * 0.25));
+      perfectBonus = Math.max(2, Math.round(f.price * 0.2));
       s.stats.perfect++;
       this.give({ coins: perfectBonus }, { quiet: true });
     }
@@ -433,7 +460,7 @@ export class Game {
     const points = this.competition.onCatch(f, weight);
     this.audio.sfx(tierIndex(f.tier) >= 3 ? 'catchRare' : 'catch');
     if (tierIndex(f.tier) >= 4) this.particles.burst(this.player.pos.clone().setY(this.player.pos.y + 1.5), { count: 50, color: TIERS[f.tier].color, speed: 5, up: 6, life: 1.4 });
-    this.events.emit('catch', { fish: f, weight, night: this.time.isNight(), island: this.world.id, perfect });
+    this.events.emit('catch', { fish: f, weight, night: this.time.isNight(), island: this.world.id, perfect, bait: opts.bait, boat: opts.boat, rod: opts.rod });
     this.ui.refreshHud();
     return { isNew, record, xp, perfectBonus, points };
   }
@@ -475,6 +502,9 @@ export class Game {
       return this.ui.toast('Not enough money!', 'warn');
     }
     if (s.level < (e.level || 1)) return this.ui.toast(`Requires level ${e.level}.`, 'warn');
+    if (e.kind === 'animal' && !this.home.isBuilt(ANIMALS[e.id].building)) return this.ui.toast(`Build a ${ANIMALS[e.id].name} home first — ask Bob.`, 'warn');
+    if (e.kind === 'animal' && this.home.animalCount(e.id) >= ANIMALS[e.id].max) return this.ui.toast(`Your ${ANIMALS[e.id].name.toLowerCase()} pen is full.`, 'warn');
+    if (e.kind === 'irrigation' && (s.farm.irrigation || 0) !== e.irr - 1) return this.ui.toast((s.farm.irrigation || 0) >= e.irr ? 'Already installed.' : `Install the ${IRRIGATION[e.irr - 1].name} first.`, 'warn');
     this.spend(coins, gems);
     this.audio.sfx('buy');
     switch (e.kind) {
@@ -496,6 +526,14 @@ export class Game {
       case 'cosmetic':
         s.cosmetics.push(e.id);
         this.ui.toast(`👕 ${COSMETICS[e.id].name} added to your wardrobe (C)`, 'good');
+        break;
+      case 'animal':
+        this.home.addAnimal(e.id);
+        this.ui.banner('New Farm Animal!', `${ANIMALS[e.id].name} — find it in its pen at your homestead`, ANIMALS[e.id].icon);
+        break;
+      case 'irrigation':
+        this.home.setIrrigation(e.irr);
+        this.ui.banner('Farm Upgrade!', `${IRRIGATION[e.irr].name} installed`, IRRIGATION[e.irr].icon);
         break;
       case 'pet':
         s.pets.push(e.id);
@@ -519,6 +557,7 @@ export class Game {
     }
     this.audio.sfx('click');
     this.ui.refreshHud();
+    this.events.emit('equip', { id, kind });
   }
   setPet(id) {
     this.pet?.dispose();
@@ -558,38 +597,59 @@ export class Game {
   }
   ingredientCount(k) {
     const inv = this.state.inventory;
-    if (k === 'anyFish') return Object.entries(inv).filter(([id]) => ITEMS[id]?.type === 'fish' && ITEMS[id].tier !== 'junk').reduce((s, [, n]) => s + n, 0);
+    if (FISH_INPUTS[k]) return fishFor(k, inv).reduce((sum, id) => sum + inv[id], 0);
     return inv[RECIPE_ALIASES[k] || k] || 0;
   }
   canCook(r) {
     return Object.entries(r.inputs).every(([k, n]) => this.ingredientCount(k) >= n);
   }
-  cook(id) {
-    const r = RECIPES.find((x) => x.id === id);
-    if (!r || !this.canCook(r)) return;
-    for (const [k, n] of Object.entries(r.inputs)) {
-      if (k === 'anyFish') {
-        // use the cheapest fish first
-        let left = n;
-        const fish = Object.keys(this.state.inventory).filter((i) => ITEMS[i]?.type === 'fish' && ITEMS[i].tier !== 'junk').sort((a, b) => ITEMS[a].sell - ITEMS[b].sell);
-        for (const f of fish) {
-          const take = Math.min(left, this.state.inventory[f]);
-          this.removeItem(f, take);
-          left -= take;
-          if (!left) break;
-        }
-      } else this.removeItem(RECIPE_ALIASES[k] || k, n);
+  /**
+   * Which fish to use for a fish input: the player's pick ({ fishId: count }) if it's valid,
+   * otherwise the cheapest fish in the bag.
+   */
+  fishPlan(k, n, pick) {
+    const inv = this.state.inventory;
+    if (pick) {
+      const total = Object.values(pick).reduce((a, b) => a + b, 0);
+      const ok = total === n && Object.entries(pick).every(([id, c]) => c >= 0 && (inv[id] || 0) >= c && FISH_INPUTS[k].test(ITEMS[id] || {}));
+      if (ok) return Object.fromEntries(Object.entries(pick).filter(([, c]) => c > 0));
     }
-    this.addItem(r.out, 1);
+    const plan = {};
+    let left = n;
+    for (const id of fishFor(k, inv)) {
+      const take = Math.min(left, inv[id]);
+      if (take) plan[id] = take;
+      left -= take;
+      if (!left) break;
+    }
+    return left ? null : plan;
+  }
+  /** Cook a recipe once. opts.fish = { anyFish: { fish_sardine: 1 } } chooses the fish to use. */
+  cook(id, opts = {}) {
+    const r = RECIPES.find((x) => x.id === id);
+    if (!r || !this.canCook(r) || this.state.level < r.level) return false;
+    const plans = {};
+    for (const [k, n] of Object.entries(r.inputs)) {
+      if (!FISH_INPUTS[k]) continue;
+      plans[k] = this.fishPlan(k, n, opts.fish?.[k]);
+      if (!plans[k]) return false;
+    }
+    for (const [k, n] of Object.entries(r.inputs)) {
+      if (FISH_INPUTS[k]) for (const [f, c] of Object.entries(plans[k])) this.removeItem(f, c, true);
+      else this.removeItem(RECIPE_ALIASES[k] || k, n, true);
+    }
+    this.addItem(r.out, r.qty || 1, true);
     if (this.home.firePos && this.world?.id === 'palmora') {
-      const from = this.home.firePos.clone().setY(this.home.firePos.y + 0.8);
+      const from = this.home.firePos.clone().setY(this.home.firePos.y + 1);
       this.particles.burst(from, { count: 16, color: '#f4f1e8', speed: 0.8, up: 3, life: 1.2, gravity: -1 });
       this.fx.collect(emojiSprite(ITEMS[r.out].icon, 0.8), from, { dur: 0.7 });
     }
     this.state.stats.cooked++;
     this.audio.sfx('harvest');
-    this.addXP(12 + r.level * 4);
+    // basics (flour, sugar…) give a little XP, real dishes more
+    this.addXP(r.cat === 'basics' ? 4 + r.level : 10 + r.level * 4);
     this.events.emit('cook', { recipe: r.out });
+    return true;
   }
   boatTierOf(id) {
     return BOATS_BY_ID[id]?.tier ?? 0;
@@ -607,6 +667,7 @@ export class Game {
     this.player.setLook(look);
     this.player.char.play('wave', 0.8);
     this.audio.sfx('click');
+    this.events.emit('wear', {});
   }
 
   // ── portraits ────────────────────────────────────
@@ -690,6 +751,28 @@ export class Game {
   canBeAttacked() {
     return this.mode === 'play' && !this.isPaused();
   }
+  /** Fullscreen (hides the browser bars on phones) and keep landscape if possible. */
+  async toggleFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        return;
+      }
+      if (!req) throw new Error('unsupported');
+      await req.call(el, { navigationUI: 'hide' });
+      try {
+        await screen.orientation?.lock?.('landscape');
+      } catch {
+        /* rotating by hand still works */
+      }
+    } catch {
+      this.ui.toast('Tip: tap Share → "Add to Home Screen" to play full screen.', 'info');
+    }
+    setTimeout(() => this.resize(), 300);
+  }
+
   flashLightning() {
     this.ui.flashLightning();
     setTimeout(() => this.audio.sfx('thunder'), 600 + Math.random() * 900);
@@ -723,7 +806,11 @@ export class Game {
     if (this.player) this.fx.update(dt);
     this.world?.update(dt, this.t);
     this.home.updateDecorGlow(env.glow);
+    if (playing) this.home.update(dt);
+    if (playing) this.farmTools.update(dt);
+    else if (this.farmTools.active) this.farmTools.stop();
 
+    if (playing && !paused) this.boatTrip.update(dt);
     if (this.player && (playing || this.mode === 'create')) {
       this.player.update(dt);
     }
@@ -751,6 +838,14 @@ export class Game {
     const g = this;
     const p = this.player;
     if (this.fishing.active || this.home.placing || this.travelling) return;
+    if (this.boatTrip.active) {
+      if (this.boatTrip.busy) return g.ui.setPrompt(null);
+      if (this.fishing.spotAhead()) {
+        g.ui.setPrompt({ key: 'E', text: 'Cast from your boat', icon: '🎣' });
+        if (g.input.pressed('KeyE')) this.fishing.start();
+      } else g.ui.setPrompt({ key: this.input.isTouch ? '↔' : 'A/D', text: 'Turn toward open water', icon: '🚤' });
+      return;
+    }
     let best = null;
     let bestScore = Infinity;
     const f = p.forward();
@@ -815,21 +910,42 @@ export class Game {
       return;
     }
     // follow
-    c.yaw -= input.mouse.dx * 0.006 * sens;
-    c.pitch += input.mouse.dy * 0.004 * sens * (this.settings.invertY ? -1 : 1);
+    // dragging with a farm tool paints the field instead of turning the camera
+    if (!this.farmTools.painting) {
+      c.yaw -= input.mouse.dx * 0.006 * sens;
+      c.pitch += input.mouse.dy * 0.004 * sens * (this.settings.invertY ? -1 : 1);
+    }
     c.pitch = clamp(c.pitch, 0.05, 1.25);
     if (this.fishing.active && c.pitch < 0.5) c.pitch = damp(c.pitch, 0.5, 3, dt);
     c.dist = clamp(c.dist * (1 + input.mouse.wheel * 0.0012), 4.5, 24);
     // gentle auto-follow behind the player while walking
     const speed = Math.hypot(p.vel.x, p.vel.z);
     if (speed > 1 && this.t - c.lastDrag > 2.5 && !this.fishing.active) c.yaw = dampAngle(c.yaw, p.yaw + Math.PI, 0.9, dt);
+    // on the boat the camera swings round behind you as you turn
+    if (this.boatTrip.active && this.t - c.lastDrag > 1.5) c.yaw = dampAngle(c.yaw, p.yaw + Math.PI, 2.5, dt);
     const tgt = p.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
     c.target.lerp(tgt, 1 - Math.exp(-10 * dt));
-    const cp = Math.cos(c.pitch);
-    const dir = new THREE.Vector3(Math.sin(c.yaw) * cp, Math.sin(c.pitch), Math.cos(c.yaw) * cp);
-    // pull the camera in front of trees / buildings that would block the view
+    const dirAt = (pitch) => {
+      const cp = Math.cos(pitch);
+      return new THREE.Vector3(Math.sin(c.yaw) * cp, Math.sin(pitch), Math.cos(c.yaw) * cp);
+    };
+    // if a building is behind you, first try lifting the camera up over its roof…
+    let lift = 0;
+    if (this.cameraClearance(c.target, dirAt(c.pitch), c.dist) < c.dist * 0.85) {
+      for (const l of [0.25, 0.45, 0.65]) {
+        if (c.pitch + l > 1.3) break;
+        if (this.cameraClearance(c.target, dirAt(c.pitch + l), c.dist) >= c.dist * 0.85) {
+          lift = l;
+          break;
+        }
+      }
+    }
+    c.lift = damp(c.lift || 0, lift, 7, dt);
+    const dir = dirAt(Math.min(1.3, c.pitch + c.lift));
+    // …and only move in closer if that isn't enough
     const clear = this.cameraClearance(c.target, dir, c.dist);
-    c.curDist = c.curDist ? (clear < c.curDist ? clear : damp(c.curDist, clear, 3, dt)) : clear;
+    // ease in front of walls quickly but smoothly, and drift back out slowly — never snap
+    c.curDist = c.curDist ? damp(c.curDist, clear, clear < c.curDist ? 4 : 2.5, dt) : clear;
     const pos = c.target.clone().addScaledVector(dir, c.curDist);
     const ground = this.world.groundAt(pos.x, pos.z);
     pos.y = Math.max(pos.y, Math.max(ground, 0) + 0.8);
@@ -844,29 +960,26 @@ export class Game {
   }
 }
 
-/** Distance along `dir` from `from` before the camera would enter a tree canopy or building. */
+/**
+ * Distance along `dir` from `from` before the camera would end up inside a building.
+ * Trees and small props (lamps, crates, rocks) are ignored so the view never jumps in
+ * just because you walked past a palm.
+ */
 Game.prototype.cameraClearance = function (from, dir, maxDist) {
   const w = this.world;
-  const near = w.colliders.filter((c) => Math.hypot(c.x - from.x, c.z - from.z) < maxDist + 8);
+  const near = w.colliders.filter((c) => c.type === 'box' && Math.min(c.hw, c.hd) > 0.35 && Math.hypot(c.x - from.x, c.z - from.z) < maxDist + 10);
+  if (!near.length) return maxDist;
   const p = new THREE.Vector3();
-  for (let d = 1.5; d <= maxDist; d += 0.4) {
+  for (let d = 2; d <= maxDist; d += 0.35) {
     p.copy(from).addScaledVector(dir, d);
-    const ground = w.heightAt(p.x, p.z);
-    const above = p.y - ground;
+    const above = p.y - w.heightAt(p.x, p.z);
+    if (above > 4.2) continue;
     for (const c of near) {
-      if (c.type === 'circle') {
-        // trees: thin trunk colliders with a wide canopy above
-        const tree = c.tree;
-        const rad = tree ? 2.1 : c.r + 0.3;
-        const top = tree ? 6.5 : Math.max(1.5, c.r * 1.6);
-        if (above < top && Math.hypot(p.x - c.x, p.z - c.z) < rad && (!tree || above > 1.2)) return Math.max(2.2, d - 0.6);
-      } else if (above < 5) {
-        const cs = Math.cos(c.rot);
-        const sn = Math.sin(c.rot);
-        const dx = p.x - c.x;
-        const dz = p.z - c.z;
-        if (Math.abs(dx * cs - dz * sn) < c.hw + 0.4 && Math.abs(dx * sn + dz * cs) < c.hd + 0.4) return Math.max(2.2, d - 0.6);
-      }
+      const cs = Math.cos(c.rot || 0);
+      const sn = Math.sin(c.rot || 0);
+      const dx = p.x - c.x;
+      const dz = p.z - c.z;
+      if (Math.abs(dx * cs - dz * sn) < c.hw + 0.3 && Math.abs(dx * sn + dz * cs) < c.hd + 0.3) return Math.max(3, d - 0.5);
     }
   }
   return maxDist;

@@ -38,6 +38,16 @@ export class Player {
     const g = this.game;
     const w = g.world;
     const input = g.input;
+    // standing on the boat: turn on the spot, ride the swell
+    if (g.boatTrip?.active) {
+      if (g.canMove() && !this.locked && !g.boatTrip.busy) this.yaw -= input.axis().x * 1.9 * dt;
+      g.boatTrip.placePlayer();
+      this.vel.set(0, 0, 0);
+      this.grounded = true;
+      this.root.rotation.y = this.yaw;
+      this.char.update(dt, { speed: 0, grounded: true, pose: this.pose });
+      return;
+    }
     let mx = 0;
     let mz = 0;
     const canMove = g.canMove() && !this.locked;

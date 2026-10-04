@@ -303,6 +303,9 @@ export class AudioSystem {
       case 'bite': this.tone('square', 880, null, 0.08, 0.08); return this.tone('square', 1175, null, 0.1, 0.08, 0.09);
       case 'hook': return this.tone('sawtooth', 200, 600, 0.12, 0.08);
       case 'miss': return this.tone('triangle', 400, 150, 0.4, 0.12);
+      case 'reelTap': return this.tone('triangle', 560 + Math.random() * 120, 820, 0.045, 0.05);
+      case 'snap': this.noiseBurst(0.1, 0.16, 3200, 'highpass'); return this.tone('sawtooth', 900, 110, 0.3, 0.1);
+      case 'thrash': return this.noiseBurst(0.3, 0.1, 1100);
       case 'coin': this.tone('square', 988, null, 0.06, 0.06); return this.tone('square', 1319, null, 0.15, 0.06, 0.06);
       case 'gem': return this.arp([84, 88, 91, 96], 0.05, 0.08, 'sine');
       case 'pickup': return this.tone('sine', 700, 1200, 0.1, 0.1);

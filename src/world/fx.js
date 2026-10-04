@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { inked, toon } from './toon.js';
+import { inked, toon, gradientMap, glowTexture } from './toon.js';
+import { TIERS } from '../data/fish.js';
+import { fishSVG } from '../ui/icons.js';
 import { ITEMS } from '../data/items.js';
 import { clamp, lerp } from '../core/utils.js';
 
@@ -60,42 +62,44 @@ export function emojiSprite(emoji, size = 0.7) {
   return s;
 }
 
-/** Chunky toon fish built from the species' colours. */
+const fishTexCache = new Map();
+/** The catch-card illustration painted onto a texture (cached per species). */
+export function fishTexture(f) {
+  let tex = fishTexCache.get(f.id);
+  if (tex) return tex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const img = new Image();
+  img.onload = () => {
+    c.getContext('2d').drawImage(img, 0, 0, 512, 512);
+    tex.needsUpdate = true;
+  };
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fishSVG(f, 512))}`;
+  fishTexCache.set(f.id, tex);
+  return tex;
+}
+
+/**
+ * A caught fish: the same hand-drawn art as the catch card on a cut-out card that
+ * always turns to face the camera, with a soft rarity glow behind it.
+ */
 export function fishMesh(f) {
-  const [body, belly, fin] = f.colors;
   const g = new THREE.Group();
-  const long = f.shape === 'long' || f.shape === 'eel' || f.shape === 'slim' || f.shape === 'shark';
-  const flat = f.shape === 'flat' || f.shape === 'ray';
-  const round = f.shape === 'round';
-  const L = long ? 0.55 : round ? 0.32 : 0.42;
-  const b = inked(new THREE.SphereGeometry(1, 14, 10), body, 0.012);
-  b.scale.set(L, flat ? 0.1 : round ? 0.3 : 0.2, flat ? 0.38 : 0.13);
-  g.add(b);
-  const bl = inked(new THREE.SphereGeometry(1, 12, 8), belly, 0);
-  bl.scale.set(L * 0.85, flat ? 0.06 : 0.12, flat ? 0.3 : 0.11);
-  bl.position.y = -0.06;
-  g.add(bl);
-  const tail = inked(new THREE.ConeGeometry(0.16, 0.24, 4), fin, 0.012);
-  tail.rotation.z = Math.PI / 2;
-  tail.scale.set(1, 1, 0.25);
-  tail.position.x = -L - 0.08;
-  g.add(tail);
-  const dorsal = inked(new THREE.ConeGeometry(0.08, 0.16, 4), fin, 0.01);
-  dorsal.scale.z = 0.25;
-  dorsal.position.set(0, flat ? 0.08 : 0.2, 0);
-  g.add(dorsal);
-  for (const sz of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), new THREE.MeshBasicMaterial({ color: '#2a2534' }));
-    eye.position.set(L * 0.7, 0.05, sz * (flat ? 0.12 : 0.1));
-    g.add(eye);
+  const tex = fishTexture(f);
+  const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: gradientMap(), alphaTest: 0.5, side: THREE.DoubleSide, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.45 });
+  const card = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), mat);
+  card.castShadow = false;
+  g.add(card);
+  if (f.tier !== 'junk' && f.tier !== 'common') {
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: TIERS[f.tier].color, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.setScalar(2.2);
+    glow.position.z = -0.05;
+    g.add(glow);
   }
-  if (f.bill) {
-    const bill = inked(new THREE.ConeGeometry(0.03, 0.4, 5), fin, 0.008);
-    bill.rotation.z = -Math.PI / 2;
-    bill.position.x = L + 0.18;
-    g.add(bill);
-  }
-  g.traverse((o) => (o.castShadow = false));
+  g.userData.billboard = true;
   return g;
 }
 
@@ -143,6 +147,11 @@ export class FX {
   overHead() {
     const p = this.game.player;
     return this._v.set(p.pos.x, p.pos.y + 2.35 * p.root.scale.y, p.pos.z);
+  }
+  /** Turn a flat card toward the camera (around Y), with a little wiggle. */
+  faceCamera(o, wiggle = 0) {
+    const c = this.game.camera.position;
+    o.rotation.set(0, Math.atan2(c.x - o.position.x, c.z - o.position.z), wiggle, 'YXZ');
   }
   add(obj) {
     this.game.scene.add(obj);
@@ -239,11 +248,13 @@ export class FX {
         if (it.t < fly) {
           const k = it.t / fly;
           o.position.set(lerp(it.from.x, head.x, k), lerp(it.from.y, head.y, k) + Math.sin(k * Math.PI) * 2.2, lerp(it.from.z, head.z, k));
-          o.rotation.z += dt * 10;
+          if (o.userData.billboard) this.faceCamera(o, Math.sin(k * Math.PI * 2) * 0.6);
+          else o.rotation.z += dt * 10;
         } else {
           const tt = it.t - fly;
           o.position.set(head.x, head.y + Math.sin(tt * 6) * 0.04, head.z);
-          o.rotation.set(0, g.player.yaw + Math.PI / 2, Math.sin(tt * 9) * 0.25);
+          if (o.userData.billboard) this.faceCamera(o, Math.sin(tt * 9) * 0.22);
+          else o.rotation.set(0, g.player.yaw + Math.PI / 2, Math.sin(tt * 9) * 0.25);
           if (tt > it.dur) {
             g.particles.burst(head, { count: 14, color: '#fff6c0', speed: 2, up: 2.5, life: 0.6 });
             done = true;

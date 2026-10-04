@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { NPCS } from '../data/npcs.js';
-import { ITEMS } from '../data/items.js';
+import { ITEMS, ANIMALS } from '../data/items.js';
 import { ISLANDS } from '../data/islands.js';
 import { BEACH_ITEMS } from '../data/quests.js';
 
@@ -65,6 +65,17 @@ export function objectiveTarget(game, obj, quest = null) {
         const t = nearest(ready);
         return t ? { pos: t.pos, label: `${ITEMS[t.fruit].name} tree — press E to shake` } : null;
       }
+      // animal goods: point at that animal's pen
+      const animal = Object.values(ANIMALS).find((a) => a.product === obj.target);
+      if (animal) {
+        if (w.id !== 'palmora') return home('');
+        if (!game.home.isBuilt(animal.building)) return npcTarget('bo');
+        return { pos: game.home.penCenter(animal.building), label: `${animal.name} pen — press E on a ${animal.name.toLowerCase()} with ${ITEMS[animal.product].name.toLowerCase()}` };
+      }
+      if (obj.target === 'treasure') {
+        const x = nearest((w.digSpots || []).map((d) => ({ pos: d.pos })));
+        return x ? { pos: x.pos, label: 'X mark — press E to dig' } : null;
+      }
       const ids = obj.target === 'beach' ? BEACH_ITEMS : [obj.target];
       const pk = nearest(w.pickups.filter((x) => ids.includes(x.id)));
       return pk ? { pos: pk.pos, label: `${ITEMS[pk.id].name} — walk over it` } : null;
@@ -81,22 +92,41 @@ export function objectiveTarget(game, obj, quest = null) {
       return null;
     }
     case 'catch':
+      if (obj.target === 'boat' || obj.target === 'rod:deepsea') return w.boardPos ? { pos: w.boardPos.clone(), label: 'Your boat — press E → Fish from the boat' } : fishingSpot();
       return fishingSpot();
     case 'plant':
     case 'harvest':
       return home('Your farm plots');
     case 'cook':
       if (w.id !== 'palmora') return home('');
-      return game.home.firePos ? { pos: game.home.firePos.clone(), label: 'Your campfire — press E to cook' } : home('Your home');
+      return game.home.kitchenPos ? { pos: game.home.kitchenPos.clone(), label: 'Your kitchen — press E to cook' } : home('Your home');
     case 'build':
+    case 'construct':
       if (w.id === 'palmora') return npcTarget('bo');
       return sailTo('palmora', 'Bob is on Palmora');
     case 'own': {
       const [kind] = obj.target.split(':');
       if (kind === 'boat') return w.id === 'palmora' ? npcTarget('reyes') : sailTo('palmora', 'Captain Jack is on Palmora');
       if (kind === 'weapon') return npcTarget('ash');
-      if (kind === 'cosmetics') return npcTarget('luna');
+      if (kind === 'cosmetics' || kind === 'pet') return npcTarget('luna');
+      if (kind === 'irrigation') return npcTarget('coco');
+      if (kind === 'rod') return w.id === 'palmora' ? npcTarget(obj.target === 'rod:deepsea' ? 'reyes' : 'finn') : sailTo('palmora', 'Rods are sold on Palmora');
+      if (kind === 'dex') return fishingSpot();
       return null;
+    }
+    case 'water':
+    case 'fertilize':
+      return home('Your farm plots');
+    case 'makefeed':
+      if (w.id !== 'palmora') return home('');
+      return game.home.isBuilt?.('feeder') ? { pos: game.home.feederPos(), label: 'Your Feeder — press E' } : npcTarget('bo');
+    case 'sleep':
+      if (w.id !== 'palmora') return home('');
+      return game.home.door ? { pos: game.home.door.clone(), label: 'Your home — press E, then Sleep' } : home('Your home');
+    case 'bounty': {
+      if (w.id !== 'palmora') return sailTo('palmora', 'The bounty board is on Palmora');
+      const b = w.interactables.find((i) => i.icon === '📋');
+      return b ? { pos: b.pos, label: 'Bounty Board — press E' } : null;
     }
     case 'visit':
       if (w.id === obj.target) return null;

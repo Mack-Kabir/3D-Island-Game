@@ -1,5 +1,6 @@
 import { storageGet, storageSet, storageRemove } from '../core/utils.js';
 import { FREE_COSMETICS } from '../data/cosmetics.js';
+import { ROD_MIGRATION } from '../data/gear.js';
 
 const KEY = 'tidewander.save.v1';
 const SETTINGS_KEY = 'tidewander.settings.v1';
@@ -27,7 +28,7 @@ export function newState(name, look) {
     created: Date.now(),
     name: name || 'Islander',
     look,
-    coins: 50,
+    coins: 15,
     gems: 0,
     xp: 0,
     level: 1,
@@ -50,7 +51,7 @@ export function newState(name, look) {
     flags: {},
     fishdex: {},
     npcs: {},
-    farm: { plots: [] },
+    farm: { plots: [], animals: [], irrigation: 0, buildings: {}, feed: 0 },
     house: { level: 0, decor: [] },
     world: {},
     bounties: { day: 0, list: [] },
@@ -69,6 +70,15 @@ export function saveGame(state) {
 export function loadGame() {
   const s = storageGet(KEY, null);
   if (!s || s.version !== 1) return null;
+  // older saves: farm animals & irrigation arrived later
+  s.farm = s.farm || { plots: [] };
+  s.farm.animals = s.farm.animals || [];
+  s.farm.irrigation = s.farm.irrigation || 0;
+  s.farm.buildings = s.farm.buildings || {};
+  s.farm.feed = s.farm.feed || 0;
+  // rods from older versions map onto the new line-up
+  s.rods = [...new Set((s.rods || []).map((r) => ROD_MIGRATION[r] || r))];
+  if (ROD_MIGRATION[s.rod]) s.rod = ROD_MIGRATION[s.rod];
   return s;
 }
 export function hasSave() {

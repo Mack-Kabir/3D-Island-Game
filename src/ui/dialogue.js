@@ -4,8 +4,20 @@ import { HEART_REWARDS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { rewardText } from './panels.js';
 import { SHOPS } from '../data/shops.js';
+import { CHATTER, CONTEXT, REMINDERS } from '../data/chatter.js';
+import { FISH_BY_ID, tierIndex } from '../data/fish.js';
+import { HOUSES, PETS_BY_ID, RODS_BY_ID } from '../data/gear.js';
+import { ISLANDS } from '../data/islands.js';
 
-const GIFT_TYPES = ['fish', 'fruit', 'product', 'collectible', 'treasure', 'material', 'decor'];
+/** Short stable key for a line, so islanders remember what they've already said. */
+function lineKey(line) {
+  const str = JSON.stringify(line);
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+const GIFT_TYPES = ['fish', 'fruit', 'crop', 'animal', 'ingredient', 'product', 'collectible', 'treasure', 'material', 'decor'];
 
 export class Dialogue {
   constructor(game) {
@@ -28,13 +40,81 @@ export class Dialogue {
   }
   fill(text) {
     if (typeof text === 'object') return { you: this.fill(text.you) };
-    return text.replace(/\{name\}/g, this.game.state.name);
+    const c = this.ctx || this.context();
+    const vals = { name: this.game.state.name, bestFish: c.bestFish, caught: c.caught, day: c.day, island: c.island, pet: c.pet, house: c.house, houseName: c.houseName, level: c.level, rod: c.rod };
+    return text.replace(/\{(\w+)\}/g, (m, k) => (vals[k] ?? m));
+  }
+
+  /** What's going on in the player's life — islanders comment on it. */
+  context() {
+    const g = this.game;
+    const s = g.state;
+    let best = null;
+    for (const id of Object.keys(s.fishdex)) {
+      const f = FISH_BY_ID[id];
+      if (f && tierIndex(f.tier) >= 3 && (!best || tierIndex(f.tier) > tierIndex(best.tier))) best = f;
+    }
+    const lvl = s.house?.level ?? 0;
+    return {
+      rain: g.weather.raining(),
+      night: g.time.isNight(),
+      hour: Math.floor(g.time.hour()),
+      caught: s.stats.caught,
+      bestFish: best?.name ?? null,
+      level: s.level,
+      house: lvl,
+      houseName: HOUSES[lvl]?.name ?? 'home',
+      boat: g.boatTier() > 0,
+      pet: s.pet ? PETS_BY_ID[s.pet]?.name.toLowerCase() : null,
+      pirates: s.stats.pirates,
+      day: s.time.day,
+      hpLow: s.hp < g.combat.maxHp() * 0.4,
+      hasRod: !!s.rod,
+      rod: RODS_BY_ID[s.rod]?.name ?? 'rod',
+      island: ISLANDS[g.world.id]?.name ?? '',
+      cooked: s.stats.cooked,
+      harvested: s.stats.harvested,
+    };
+  }
+
+  /** Remarks about the world that fit right now. */
+  contextLines() {
+    const c = this.ctx;
+    return CONTEXT.filter((e) => e.when(c)).flatMap((e) => e.lines);
+  }
+
+  /**
+   * Pick a line this islander hasn't said recently. Each islander remembers what they've
+   * said and only repeats once they've gone through the whole pool.
+   */
+  fresh(id, pool) {
+    if (!pool.length) return null;
+    const r = this.rel(id);
+    const said = (r.said = r.said || []);
+    const keys = pool.map(lineKey);
+    let options = pool.filter((_, i) => !said.includes(keys[i]));
+    if (!options.length) {
+      // start the cycle over (but never repeat the very last thing they said)
+      const last = said[said.length - 1];
+      r.said = said.filter((k) => !keys.includes(k));
+      options = pool.filter((_, i) => keys[i] !== last);
+      if (!options.length) options = pool;
+    }
+    const line = pick(options);
+    r.said.push(lineKey(line));
+    if (r.said.length > 150) r.said.splice(0, r.said.length - 150);
+    return line;
+  }
+  /** A line (string or short exchange) as dialogue pages. */
+  toPages(line) {
+    return [].concat(line).map((l) => this.fill(l));
   }
 
   open(npc) {
     const g = this.game;
     if (this.npc) return;
     this.npc = npc;
+    this.ctx = this.context();
     npc.talking = true;
     g.onPanelChange(true, 'dialogue');
     g.audio.sfx('open');
@@ -56,18 +136,27 @@ export class Dialogue {
       return;
     }
     const night = g.time.isNight();
-    const pool = (night ? npc.def.greet.night : npc.def.greet.day) || npc.def.greet.day || npc.def.greet.night;
-    const lines = [this.fill(pick(pool))];
+    const extra = CHATTER[npc.id] || {};
+    const dayPool = [...(npc.def.greet.day || []), ...(extra.day || [])];
+    const nightPool = [...(npc.def.greet.night || []), ...(extra.night || [])];
+    const pool = (night ? nightPool : dayPool).length ? (night ? nightPool : dayPool) : dayPool.length ? dayPool : nightPool;
+    const lines = this.toPages(this.fresh(npc.id, pool));
     const turnIn = g.quests.canTurnIn(npc.id);
     const offers = g.quests.offers(npc.id);
     if (turnIn.length) lines.push('Oh! Did you bring what I asked for? Pick "Hand over" below!');
     else if (offers.length) lines.push(`Say, ${g.state.name}... could you help me with something? Pick "Request: ${offers[0].title}" below.`);
     else {
-      // remind the player about this islander's active request
+      // remind about this islander's request at most once a day; otherwise maybe a remark
       const mine = Object.keys(g.state.quests.active).map((id) => QUESTS[id]).find((q) => q.giver === npc.id);
-      if (mine) {
-        const obj = g.quests.currentObjective(mine.id);
-        if (obj) lines.push(`How's "${mine.title}" going? Remember: ${obj.text.charAt(0).toLowerCase() + obj.text.slice(1)}.`);
+      const obj = mine && g.quests.currentObjective(mine.id);
+      const r = this.rel(npc.id);
+      if (obj && r.remindDay !== g.state.time.day) {
+        r.remindDay = g.state.time.day;
+        const text = this.fresh(npc.id, REMINDERS);
+        lines.push(text.replace('{title}', mine.title).replace('{obj}', obj.text.charAt(0).toLowerCase() + obj.text.slice(1)));
+      } else if (Math.random() < 0.5) {
+        const remark = this.fresh(npc.id, this.contextLines());
+        if (remark) lines.push(...this.toPages(remark));
       }
     }
     this.say(lines, () => this.menu());
@@ -77,6 +166,10 @@ export class Dialogue {
     if (!this.npc) return;
     this.npc.talking = false;
     this.npc = null;
+    this.inMenu = false;
+    this.pages = [];
+    this.after = null;
+    clearInterval(this.timer);
     this.host.innerHTML = '';
     this.host.classList.remove('open');
     this.game.audio.sfx('close');
@@ -113,6 +206,7 @@ export class Dialogue {
   }
 
   say(lines, then) {
+    this.inMenu = false;
     this.pages = [...lines];
     this.after = then;
     this.nextPage();
@@ -208,7 +302,20 @@ export class Dialogue {
           this.inMenu = true;
           o.innerHTML = '';
           o.append(
-            el('button', { class: 'btn small primary', text: `Accept (${rewardText(q.rewards)})`, onclick: () => { this.inMenu = false; g.quests.start(q.id); this.say(['Wonderful! Come back when you\'re done.'], () => this.menu()); } }),
+            el('button', { class: 'btn small primary', text: `Accept (${rewardText(q.rewards)})`, onclick: () => {
+              this.inMenu = false;
+              g.quests.start(q.id);
+              // if the first step is listening to this islander, tell it right away
+              const story = g.quests.talkLines(this.npc.id).find((x) => x.quest === q.id);
+              if (story) {
+                this.say(story.lines.map((l) => this.fill(l)), () => {
+                  g.quests.completeTalk(q.id);
+                  const got = story.give ? rewardText(normalizeGive(story.give)) : '';
+                  if (got) this.say([`(Received: ${got})`], () => this.menu());
+                  else this.menu();
+                });
+              } else this.say(['Wonderful! Come back when you\'re done.'], () => this.menu());
+            } }),
             el('button', { class: 'btn small', text: 'Not now', onclick: () => { this.inMenu = false; this.menu(); } }),
           );
           o.querySelector('button')?.focus();
@@ -220,7 +327,10 @@ export class Dialogue {
       if (SHOPS[def.shop]?.sells.length) opt('🪙 Sell items', () => { const shop = def.shop; this.close(); g.ui.openPanel('shop', { shop, tab: 'sell' }); }, 'primary', `Sells: ${SHOPS[def.shop].sells.join(', ')}`);
     }
     if (def.services?.includes('travel')) opt('⛵ Set sail', () => { this.close(); g.openTravel(true); });
-    if (def.services?.includes('build')) opt('🔨 Upgrade my home', () => { this.close(); g.ui.openPanel('home', { tab: 'upgrade' }); });
+    if (def.services?.includes('build')) {
+      opt('🔨 Upgrade my home', () => { this.close(); g.ui.openPanel('home', { tab: 'upgrade' }); });
+      opt('🐔 Farm buildings', () => { this.close(); g.ui.openPanel('farmbuild'); });
+    }
     if (def.services?.includes('tournament')) opt('🏆 Tournament', () => { this.close(); g.ui.openPanel('tournament'); }, 'primary');
     opt('💬 Talk', () => this.talkMenu());
     opt('💡 What should I do?', () => this.advice());
@@ -261,12 +371,14 @@ export class Dialogue {
     const g = this.game;
     const npc = this.npc;
     const r = this.rel(npc.id);
-    const line = this.fill(pick(npc.def.chat));
+    const extra = CHATTER[npc.id] || {};
+    const pool = [...(npc.def.chat || []), ...(extra.chat || []), ...(this.hearts(npc.id) >= 4 ? extra.close || [] : []), ...this.contextLines()];
+    const line = this.fresh(npc.id, pool);
     if (r.chatDay !== g.state.time.day) {
       r.chatDay = g.state.time.day;
       this.addPts(npc.id, 3);
     }
-    this.say([line], () => this.talkMenu());
+    this.say(this.toPages(line), () => this.talkMenu());
   }
 
   gift() {
@@ -288,6 +400,7 @@ export class Dialogue {
       onPick: (id) => {
         g.removeItem(id, 1, true);
         r.giftDay = g.state.time.day;
+        g.events.emit('gift', { npc: npc.id, id });
         const love = npc.def.loves.includes(id);
         const like = npc.def.likes.includes(id);
         const pts = love ? 25 : like ? 12 : 4;
@@ -327,5 +440,7 @@ function normalizeGive(give) {
   if (give.items) r.items = give.items;
   if (give.rods) r.rods = give.rods;
   if (give.weapons) r.items = { ...(r.items || {}) };
+  if (give.buildings) r.buildings = give.buildings;
+  if (give.animals) r.animals = give.animals;
   return r;
 }

@@ -1,6 +1,6 @@
 import { el, escapeHtml, formatNum } from '../core/utils.js';
-import { ITEMS, RECIPES, CROPS } from '../data/items.js';
-import { FISH, TIERS, TIER_ORDER, FISH_BY_ID } from '../data/fish.js';
+import { ITEMS, RECIPES, CROPS, ANIMALS, IRRIGATION, RECIPE_CATS, RECIPE_ALIASES, FARM_BUILDINGS, FEED_RECIPES, FEEDER_CAPACITY, FISH_INPUTS, fishFor } from '../data/items.js';
+import { FISH, TIERS, TIER_ORDER, FISH_BY_ID, fishPower } from '../data/fish.js';
 import { RODS, RODS_BY_ID, BAITS, WEAPONS, WEAPONS_BY_ID, BOATS, BOATS_BY_ID, PETS, PETS_BY_ID, HOUSES, DECOR } from '../data/gear.js';
 import { COSMETICS, SKIN_TONES, HAIR_COLORS, HAIR_STYLES, EYE_COLORS } from '../data/cosmetics.js';
 import { SHOPS } from '../data/shops.js';
@@ -16,8 +16,8 @@ const price = (coins, gems) => [coins ? `<span class="price coin">🪙 ${formatN
 const empty = (text, icon = '🌊') => h('div', { class: 'empty' }, [h('div', { class: 'empty-icon', text: icon }), h('p', { text })]);
 const section = (title, ...kids) => h('section', { class: 'sec' }, [title ? h('h3', { text: title }) : null, ...kids]);
 
-const TYPE_ORDER = ['fish', 'fruit', 'product', 'seed', 'bait', 'material', 'collectible', 'treasure', 'decor', 'special', 'tool', 'trophy'];
-const TYPE_LABEL = { fish: 'Fish', fruit: 'Fruit', product: 'Food', seed: 'Seeds', bait: 'Bait', material: 'Materials', collectible: 'Collectibles', treasure: 'Treasure', decor: 'Decor', special: 'Special', tool: 'Tools', trophy: 'Trophies' };
+const TYPE_ORDER = ['fish', 'fruit', 'crop', 'animal', 'ingredient', 'product', 'seed', 'farm', 'bait', 'material', 'collectible', 'treasure', 'decor', 'special', 'tool', 'trophy'];
+const TYPE_LABEL = { fish: 'Fish', fruit: 'Fruit', crop: 'Vegetables & Grains', animal: 'Animal Goods', ingredient: 'Kitchen Basics', farm: 'Farm Supplies', product: 'Food', seed: 'Seeds', bait: 'Bait', material: 'Materials', collectible: 'Collectibles', treasure: 'Treasure', decor: 'Decor', special: 'Special', tool: 'Tools', trophy: 'Trophies' };
 
 function sortedInventory(state, filter) {
   return Object.entries(state.inventory)
@@ -215,44 +215,41 @@ export const PANELS = {
                 }, 'primary', !atHome),
               ]),
               h('div', { class: 'card' }, [h('div', { class: 'card-icon', text: '👕' }), h('b', { text: 'Wardrobe' }), h('p', { class: 'muted', text: 'Change outfits and pets.' }), btn('Open', () => ui.openPanel('wardrobe'))]),
-              h('div', { class: 'card' }, [h('div', { class: 'card-icon', text: '🍳' }), h('b', { text: 'Cook' }), h('p', { class: 'muted', text: 'Turn fish and fruit into valuable food.' }), btn('Cook', () => ui.openPanel('cook'), '', !atHome)]),
+              h('div', { class: 'card' }, [h('div', { class: 'card-icon', text: '🍳' }), h('b', { text: 'Kitchen' }), h('p', { class: 'muted', text: 'Your kitchen is right next to your house. Walk up to it and press E.' }), btn('Cook', () => ui.openPanel('kitchen'), '', !atHome)]),
               h('div', { class: 'card' }, [h('div', { class: 'card-icon', text: '💾' }), h('b', { text: 'Save' }), h('p', { class: 'muted', text: 'The game also autosaves.' }), btn('Save now', () => { g.save(true); })]),
             ]),
-            !atHome ? h('p', { class: 'muted small', text: 'Sleeping and cooking are done at your home on Palmora.' }) : null,
+            !atHome ? h('p', { class: 'muted small', text: 'Sleeping and cooking are done at your homestead on Palmora.' }) : null,
           ]);
         },
       };
     },
   },
 
-  cook: {
+  kitchen: {
     wide: true,
-    render(ui) {
+    onOpen(ui, opts) {
+      if (opts?.recipe) {
+        ui.panel.sel = opts.recipe;
+        ui.panel.lastTab = 'all';
+      }
+    },
+    render(ui, opts, p) {
       const g = ui.game;
+      const s = g.state;
+      p.pages = p.pages || {};
+      const unlocked = RECIPES.filter((r) => s.level >= r.level);
+      const ready = (cat) => unlocked.filter((r) => (cat === 'all' || r.cat === cat) && g.canCook(r)).length;
       return {
-        title: 'Campfire Cooking',
+        title: 'Crafting Kitchen',
         icon: '🍳',
-        body() {
-          const wrap = h('div', { class: 'recipe-list' });
-          for (const r of RECIPES) {
-            const out = ITEMS[r.out];
-            const locked = g.state.level < r.level;
-            const parts = Object.entries(r.inputs).map(([k, n]) => {
-              const have = g.ingredientCount(k);
-              const name = k === 'anyFish' ? 'Any fish' : ITEMS[k === 'seaweed' ? 'fish_seaweed' : k].name;
-              const icon = k === 'anyFish' ? '🐟' : k === 'seaweed' ? '🌿' : ITEMS[k].icon;
-              return `<span class="ing ${have >= n ? 'ok' : 'no'}">${icon} ${escapeHtml(name)} <b>${Math.min(have, n)}/${n}</b></span>`;
-            });
-            const can = !locked && g.canCook(r);
-            wrap.append(
-              h('div', { class: `recipe ${locked ? 'locked' : ''}`, ...tipAttrs(itemTip(r.out)) }, [
-                h('div', { class: 'recipe-out', html: itemIconHTML(r.out, 46) }),
-                h('div', { class: 'recipe-info' }, [h('b', { text: out.name }), h('div', { class: 'ings', html: parts.join('') }), h('div', { class: 'muted small', html: `Sells for 🪙 ${out.sell} · Heals ❤ ${out.heal}` })]),
-                locked ? h('span', { class: 'lock', text: `🔒 Lv ${r.level}` }) : btn('Cook', () => { g.cook(r.id); ui.refreshPanel(); }, can ? 'primary' : '', !can),
-              ]),
-            );
+        headExtra: h('span', { class: 'kitchen-sub', text: `${unlocked.length}/${RECIPES.length} recipes unlocked` }),
+        tabs: RECIPE_CATS.map((c) => ({ id: c.id, label: c.name, icon: c.icon, badge: ready(c.id) || '' })),
+        body(tab) {
+          if (p.lastTab !== tab) {
+            p.lastTab = tab;
+            p.sel = null;
           }
-          return wrap;
+          return p.sel ? recipeDetail(ui, p) : recipeBook(ui, p, tab);
         },
       };
     },
@@ -384,21 +381,24 @@ export const PANELS = {
               h('li', { text: 'Beachcombing: walk over shells, starfish and driftwood on the sand — they\'re free. Sell shells & starfish to Chloe at the fruit stand.' }),
               h('li', { text: 'Fruit: stand next to a tree with coloured fruit and press E to shake it. Sell fruit to Chloe.' }),
               h('li', { text: 'Fishing: Old Ross at the dock gives you a FREE rod (story quest). Sell fish to Megan at the fish market.' }),
-              h('li', { text: 'Cooking: at the campfire beside your home, turn 1 fish into Grilled Fish — it sells for 3× more!' }),
+              h('li', { text: 'Cooking: in the kitchen beside your home, turn 1 fish into Grilled Fish — it sells for 3× more! Dozens more recipes unlock as you level up.' }),
+              h('li', { text: 'Farming: plant seeds on your soil patches (more unlock every level), water them, fertilize for bigger harvests, and raise chickens, cows and more for eggs, milk and honey.' }),
               h('li', { text: 'Farming: buy seeds from Chloe, plant them at your homestead, water daily and harvest.' }),
               h('li', { text: 'To sell: talk to a shopkeeper and pick "Sell items". Hover any item to see what it\'s worth.' }),
             ])),
             section('Fishing', h('ol', {}, [
               h('li', { text: 'Face the water and press E to cast.' }),
               h('li', { text: 'Wait for the "!" and press E quickly to hook the fish.' }),
-              h('li', { text: 'Hold Space / E / mouse to lift the green zone. Keep the fish inside it to fill the meter.' }),
-              h('li', { text: 'Better rods = bigger zone + more luck. Bait speeds up bites. Some fish only appear at night, in rain or on certain islands.' }),
+              h('li', { text: 'When the fish is hooked, TAP E / Space / click (or the REEL button) again and again to pull it in.' }),
+              h('li', { text: 'When the fish THRASHES (red flash), stop tapping for a moment — if the line tension fills up, the line snaps!' }),
+              h('li', { text: 'Strong fish need a strong rod. With a weak rod the line strains fast and big fish usually escape.' }),
+              h('li', { text: 'Better rods = more power + more luck. Better bait = faster bites, fewer escapes and a chance of a better catch. Deep-sea fish (🚤) bite far more often when you fish from your boat.' }),
             ])),
             section('Island life', h('ul', {}, [
               h('li', { text: 'Sell fish to Megan, fruit & food to Chloe. Coins buy gear, boats, clothes and house upgrades.' }),
               h('li', { text: 'Gems come from rare catches, treasure, quests, tournaments and bounties.' }),
               h('li', { text: 'Farm at your homestead: plant, water daily, harvest. Trees fruit forever.' }),
-              h('li', { text: 'Cook at your campfire — food sells for more and heals you.' }),
+              h('li', { text: 'Cook in your kitchen — food sells for more and heals you.' }),
               h('li', { text: 'Night (7 PM – 7 AM): rare fish, Madison the night merchant… and pirate raids.' }),
               h('li', { text: 'Walk over shells, driftwood and stones to collect them. Dig X marks with a shovel.' }),
             ])),
@@ -408,6 +408,93 @@ export const PANELS = {
     },
   },
 };
+// the old campfire panel name opens the kitchen too
+PANELS.cook = PANELS.kitchen;
+
+// Bob's farm-building service
+PANELS.farmbuild = {
+  wide: true,
+  render(ui) {
+    const g = ui.game;
+    const s = g.state;
+    return {
+      title: "Bob's Farm Buildings",
+      icon: '🔨',
+      body() {
+        const wrap = h('div', { class: 'build-list' });
+        wrap.append(h('p', { class: 'muted', text: 'Animal homes and the feeder for your homestead. Broken buildings are fixed through Bob\'s requests; new ones Bob builds for coins and materials.' }));
+        for (const [id, b] of Object.entries(FARM_BUILDINGS)) {
+          const st = g.home.buildingState(id);
+          const chk = g.home.canConstruct(id);
+          const locked = s.level < b.level;
+          const cost = b.cost ? [b.cost.coins ? `🪙 ${formatNum(b.cost.coins)}` : '', b.cost.gems ? `💎 ${b.cost.gems}` : '', b.cost.driftwood ? `🪵 ${b.cost.driftwood} (have ${s.inventory.driftwood || 0})` : '', b.cost.stone ? `🪨 ${b.cost.stone} (have ${s.inventory.stone || 0})` : ''].filter(Boolean).join(' · ') : '';
+          let action;
+          if (st === 'built') action = h('span', { class: 'tag', text: '✓ Built' });
+          else if (b.quest) {
+            const q = QUESTS[b.quest];
+            const active = s.quests.active[b.quest];
+            action = h('span', { class: 'lock', text: locked ? `🔒 Lv ${b.level}` : active ? '📜 Quest active' : '📜 Ask Bob' });
+            wrap.append(buildRow(b, st, `${b.desc} Rebuilt through Bob's request "${q.title}"${locked ? ` (from level ${b.level})` : ''}.`, '', action));
+            continue;
+          } else if (locked) action = h('span', { class: 'lock', text: `🔒 Lv ${b.level}` });
+          else action = btn(st === 'ruined' ? 'Repair' : 'Build', () => { if (g.home.construct(id)) ui.refreshPanel(); }, chk.ok ? 'primary' : '', !chk.ok, { title: chk.ok ? '' : chk.why });
+          wrap.append(buildRow(b, st, b.desc, cost, action, !chk.ok && !locked && st !== 'built' ? chk.why : ''));
+        }
+        return wrap;
+      },
+    };
+  },
+};
+function buildRow(b, st, desc, cost, action, why = '') {
+  return h('div', { class: `shop-row ${st === 'built' ? 'owned' : ''}` }, [
+    h('div', { class: 'shop-icon', html: `<span class="emoji">${b.icon}</span>` }),
+    h('div', { class: 'shop-info' }, [h('b', { text: `${b.name}${st === 'ruined' ? ' (broken)' : st === 'none' ? '' : ''}` }), h('div', { class: 'muted small', text: desc }), why ? h('div', { class: 'warnline small', text: why }) : null].filter(Boolean)),
+    h('div', { class: 'shop-price', html: cost }),
+    action,
+  ]);
+}
+
+// the feeder at the homestead
+PANELS.feeder = {
+  render(ui) {
+    const g = ui.game;
+    const s = g.state;
+    return {
+      title: 'Feeder',
+      icon: '🪣',
+      body() {
+        const wrap = h('div', { class: 'feeder' });
+        const feed = s.farm.feed || 0;
+        const hungry = (s.farm.animals || []).filter((a) => !a.fed && !a.ready && ANIMALS[a.type].feed).length;
+        wrap.append(
+          h('div', { class: 'dex-progress' }, [h('div', { class: 'bar' }, [h('i', { style: { width: `${(feed / FEEDER_CAPACITY) * 100}%` } }), h('span', { text: `${feed} / ${FEEDER_CAPACITY} feed inside` })])]),
+          h('p', { class: 'muted small', text: `Every animal eats 1 feed each time it starts making its product. ${hungry ? `🐾 ${hungry} hungry animal${hungry > 1 ? 's are' : ' is'} waiting!` : ''}` }),
+        );
+        const bag = s.inventory.animal_feed || 0;
+        wrap.append(h('div', { class: 'row' }, [h('span', { html: `🪣 Animal Feed in your bag: <b>${bag}</b>` }), btn('Put it all in', () => { const n = g.home.fillFeeder(bag); if (n) g.ui.toast(`🪣 Added ${n} feed.`, 'good'); ui.refreshPanel(); }, 'primary', !bag || feed >= FEEDER_CAPACITY)]));
+        wrap.append(h('h3', { text: 'Make feed from crops' }));
+        const list = h('div', { class: 'shop-list' });
+        for (const r of FEED_RECIPES) {
+          const [[k, n]] = Object.entries(r.inputs);
+          const have = s.inventory[k] || 0;
+          const locked = s.level < r.level;
+          const times = Math.floor(have / n);
+          list.append(h('div', { class: `shop-row ${locked ? 'locked' : ''}` }, [
+            h('div', { class: 'shop-icon', html: itemIconHTML(k, 36) }),
+            h('div', { class: 'shop-info' }, [h('b', { text: `${n}× ${ITEMS[k].name} → ${r.feed} feed` }), h('div', { class: 'muted small', text: `You have ${have}` })]),
+            locked ? h('span', { class: 'lock', text: `🔒 Lv ${r.level}` }) : h('div', { class: 'row tight' }, [
+              btn('Make', () => { const m = g.home.makeFeed(r, 1); if (m) g.ui.toast(`🪣 +${m} feed`, 'good'); else g.ui.toast(feed + r.feed > FEEDER_CAPACITY ? 'The feeder is full!' : `Need ${n} ${ITEMS[k].name}.`, 'warn'); ui.refreshPanel(); }, times ? 'primary' : '', !times),
+              times > 1 ? btn(`×${times}`, () => { const m = g.home.makeFeed(r, times); if (m) g.ui.toast(`🪣 +${m} feed`, 'good'); ui.refreshPanel(); }, '', false) : null,
+            ].filter(Boolean)),
+          ]));
+        }
+        wrap.append(list);
+        wrap.append(h('p', { class: 'muted small', text: 'You can also buy Animal Feed from Chloe at the fruit stand.' }));
+        return wrap;
+      },
+    };
+  },
+};
 
 // ════════════════════════════════════════════════════════════
 //  Bag tabs
@@ -415,15 +502,16 @@ export const PANELS = {
 function itemsTab(ui, p) {
   const g = ui.game;
   const s = g.state;
-  const filters = [['all', 'All'], ['fish', 'Fish'], ['fruit', 'Fruit & Food'], ['seed', 'Seeds'], ['material', 'Materials'], ['other', 'Other']];
+  const filters = [['all', 'All'], ['fish', 'Fish'], ['farm', 'Farm'], ['food', 'Food'], ['seed', 'Seeds'], ['material', 'Materials'], ['other', 'Other']];
   const match = (it) => {
     switch (p.filter) {
       case 'all': return true;
       case 'fish': return it.type === 'fish';
-      case 'fruit': return it.type === 'fruit' || it.type === 'product';
-      case 'seed': return it.type === 'seed' || it.type === 'bait';
+      case 'farm': return ['fruit', 'crop', 'animal'].includes(it.type);
+      case 'food': return it.type === 'product' || it.type === 'ingredient';
+      case 'seed': return ['seed', 'bait', 'farm'].includes(it.type);
       case 'material': return it.type === 'material' || it.type === 'collectible';
-      default: return !['fish', 'fruit', 'product', 'seed', 'bait', 'material', 'collectible'].includes(it.type);
+      default: return !['fish', 'fruit', 'crop', 'animal', 'product', 'ingredient', 'seed', 'bait', 'farm', 'material', 'collectible'].includes(it.type);
     }
   };
   const list = sortedInventory(s, match);
@@ -483,7 +571,7 @@ function gearTab(ui) {
         equipped === x.id ? h('span', { class: 'tag', text: 'Equipped' }) : btn('Equip', () => { onEquip(x.id); ui.refreshPanel(); }),
       ]),
     ));
-  wrap.append(section('Fishing rods', s.rods.length ? rows(RODS, s.rods, s.rod, (id) => g.equip('rod', id), (r) => `Zone ${Math.round(r.zone * 100)}% · Luck +${Math.round(r.luck * 100)}% · Bite speed ×${(1 / r.speed).toFixed(2)}`) : empty('No rod yet — Old Ross at the Palmora dock can help.', '🎣')));
+  wrap.append(section('Fishing rods', s.rods.length ? rows(RODS, s.rods, s.rod, (id) => g.equip('rod', id), (r) => `Power ${r.power} · Luck +${Math.round(r.luck * 100)}% · Bite speed ×${(1 / r.speed).toFixed(2)}${r.boatOnly ? ' · 🚤 Boat only' : ''}`) : empty('No rod yet — Old Ross at the Palmora dock can help.', '🎣')));
   const baits = BAITS.filter((b) => (s.inventory[b.id] || 0) > 0);
   wrap.append(section('Bait', baits.length ? h('div', { class: 'gear-list' }, baits.map((b) => h('div', { class: `gear-row ${s.bait === b.id ? 'on' : ''}` }, [
     h('span', { class: 'gi', text: ITEMS[b.id].icon }),
@@ -510,9 +598,10 @@ function fishdexTab(ui) {
     for (const f of FISH.filter((x) => x.tier === tier)) {
       const d = s.fishdex[f.id];
       const where = f.where.includes('*') ? 'Anywhere' : f.where.map((w) => ISLANDS[w].name).join(', ');
-      const when = [f.time !== 'any' ? (f.time === 'night' ? '🌙 Night' : '☀️ Day') : '', f.weather === 'rain' ? '🌧️ Rain' : ''].filter(Boolean).join(' · ');
+      const when = [f.time !== 'any' ? (f.time === 'night' ? '🌙 Night' : '☀️ Day') : '', f.weather === 'rain' ? '🌧️ Rain' : '', f.boat ? '🚤 Best from a boat' : ''].filter(Boolean).join(' · ');
+      const pw = fishPower(f);
       grid.append(
-        h('div', { class: `dex ${d ? 'found' : ''}`, style: { '--tier': TIERS[f.tier].color }, 'data-tip-title': d ? f.name : 'Undiscovered fish', 'data-tip': `${d ? f.desc + '\n' : ''}Where: ${where}${when ? '\nWhen: ' + when : ''}\nWorth 🪙 ${f.price}` }, [
+        h('div', { class: `dex ${d ? 'found' : ''}`, style: { '--tier': TIERS[f.tier].color }, 'data-tip-title': d ? f.name : 'Undiscovered fish', 'data-tip': `${d ? f.desc + '\n' : ''}Where: ${where}${when ? '\nWhen: ' + when : ''}\nWorth 🪙 ${f.price}${pw > 1 ? `\nNeeds a rod with power ${pw}+ (${RODS.find((r) => r.power >= pw)?.name ?? 'Golden Rod'})` : ''}` }, [
           h('div', { class: 'dex-img', html: d ? fishSVG(f, 70) : fishSVG({ ...f, colors: ['#5a5466', '#5a5466', '#4a4458'], stripes: false, stars: false, flames: false }, 70) }),
           h('b', { text: d ? f.name : '???' }),
           h('div', { html: rarityBadge(f.tier) }),
@@ -565,6 +654,8 @@ export function rewardText(r = {}) {
   if (r.items) for (const [k, n] of Object.entries(r.items)) if (n) parts.push(`${ITEMS[k]?.icon ?? ''} ${n}`);
   if (r.rods) parts.push(...r.rods.map((x) => `🎣 ${RODS_BY_ID[x].name}`));
   if (r.cosmetics) parts.push(...r.cosmetics.map((x) => `👕 ${COSMETICS[x].name}`));
+  if (r.buildings) parts.push(...r.buildings.map((x) => `🔨 ${FARM_BUILDINGS[x].name}`));
+  if (r.animals) for (const [k, n] of Object.entries(r.animals)) parts.push(`${ANIMALS[k].icon} ${n} ${ANIMALS[k].name}${n > 1 ? 's' : ''}`);
   return parts.join(' · ');
 }
 
@@ -795,7 +886,7 @@ function entryInfo(g, e) {
   switch (e.kind) {
     case 'rod': {
       const r = RODS_BY_ID[e.id];
-      return { name: r.name, icon: r.icon, desc: `Zone ${Math.round(r.zone * 100)}% · Luck +${Math.round(r.luck * 100)}% · Bites ×${(1 / r.speed).toFixed(2)} faster`, owned: s.rods.includes(e.id) };
+      return { name: r.name, icon: r.icon, desc: `Power ${r.power} (lands bigger fish) · Luck +${Math.round(r.luck * 100)}% · Bites ×${(1 / r.speed).toFixed(2)} faster`, owned: s.rods.includes(e.id) };
     }
     case 'weapon': {
       const w = WEAPONS_BY_ID[e.id];
@@ -810,6 +901,16 @@ function entryInfo(g, e) {
       const slotName = { top: 'Top', bottom: 'Bottom', hat: 'Hat', acc: 'Accessory' }[c.slot];
       return { name: c.name, swatch: c.color, pattern: c.pattern, desc: `${slotName} — try it on in the Wardrobe (C)`, owned: s.cosmetics.includes(e.id) };
     }
+    case 'animal': {
+      const a = ANIMALS[e.id];
+      const n = g.home.animalCount(e.id);
+      const built = g.home.isBuilt(a.building);
+      return { name: a.name, icon: a.icon, desc: `${a.desc} Gives ${ITEMS[a.product].icon} ${ITEMS[a.product].name}. You have ${n}/${a.max}.${built ? '' : ` Needs a ${FARM_BUILDINGS[a.building].name} first — Bob builds it.`}`, owned: n >= a.max, ownedText: 'Pen full', blocked: built ? null : `🔨 Needs ${FARM_BUILDINGS[a.building].name}` };
+    }
+    case 'irrigation': {
+      const x = IRRIGATION[e.irr];
+      return { name: x.name, icon: x.icon, desc: x.desc + (e.irr > 1 ? ` Needs the ${IRRIGATION[e.irr - 1].name} first.` : ''), owned: (s.farm.irrigation || 0) >= e.irr, ownedText: 'Installed' };
+    }
     case 'pet': {
       const p = PETS_BY_ID[e.id];
       return { name: p.name, icon: p.icon, desc: `${p.perk}. ${p.desc}`, owned: s.pets.includes(e.id) };
@@ -817,10 +918,217 @@ function entryInfo(g, e) {
     default: {
       const it = ITEMS[e.id];
       const owned = e.once && (s.inventory[e.id] || 0) > 0;
-      const extra = it.type === 'seed' ? ` · ${CROPS[it.crop].hours}h to grow` : '';
+      const c = it.type === 'seed' ? CROPS[it.crop] : null;
+      const extra = c ? ` · ${c.hours}h to grow${c.regrow ? `, then every ${c.regrow}h` : ''}` : '';
       return { name: `${it.name}${e.qty > 1 ? ` ×${e.qty}` : ''}`, html: itemIconHTML(e.id, 40), desc: (it.desc || '') + extra, owned };
     }
   }
+}
+
+// ── kitchen ─────────────────────────────────────────
+const ingName = (k) => (FISH_INPUTS[k] ? FISH_INPUTS[k].name : ITEMS[RECIPE_ALIASES[k] || k].name);
+const ingIcon = (k, size) => (FISH_INPUTS[k] ? `<span class="emoji" style="font-size:${Math.round(size * 0.72)}px">${FISH_INPUTS[k].icon}</span>` : itemIconHTML(RECIPE_ALIASES[k] || k, size));
+/** Where to get an ingredient you're missing. */
+function ingSource(k) {
+  if (FISH_INPUTS[k]) return `${FISH_INPUTS[k].desc} Catch one by fishing.`;
+  if (ITEMS[k]?.type === 'fish') {
+    const f = FISH_BY_ID[ITEMS[k].fish];
+    const where = f.where.includes('*') ? 'any island' : f.where.map((w) => ISLANDS[w].name).join(', ');
+    return `Catch a ${f.name} — ${where}${f.time !== 'any' ? `, ${f.time === 'night' ? 'at night' : 'by day'}` : ''}${f.weather === 'rain' ? ', in the rain' : ''}${f.boat ? ' (best from a boat 🚤)' : ''}.`;
+  }
+  if (k === 'seaweed') return 'Sometimes caught while fishing.';
+  const crop = Object.values(CROPS).find((c) => c.item === k);
+  if (crop) return `${crop.kind === 'tree' ? 'Grow a' : 'Grow'} ${crop.name}${crop.kind === 'tree' ? '' : ''} — ${crop.kind === 'tree' ? 'sapling' : 'seeds'} at Chloe's (Lv ${crop.level})${['mango', 'banana', 'coconut'].includes(k) ? ', or shake wild trees' : ''}.`;
+  const animal = Object.values(ANIMALS).find((a) => a.product === k);
+  if (animal) return `From your ${animal.name.toLowerCase()} (buy at Chloe's, Lv ${animal.level}).`;
+  const r = RECIPES.find((x) => x.out === k);
+  if (r) return `Cook it in this kitchen (Lv ${r.level}).`;
+  return ITEMS[k]?.desc || '';
+}
+function recipeCard(ui, p, r) {
+  const g = ui.game;
+  const out = ITEMS[r.out];
+  const locked = g.state.level < r.level;
+  const can = !locked && g.canCook(r);
+  const missing = Object.entries(r.inputs).filter(([k, n]) => g.ingredientCount(k) < n).length;
+  return h('button', {
+    class: `kcard ${locked ? 'locked' : can ? 'ready' : ''}`,
+    'aria-label': `${out.name}${locked ? `, unlocks at level ${r.level}` : can ? ', ready to cook' : `, missing ${missing} ingredient${missing === 1 ? '' : 's'}`}`,
+    onclick: () => {
+      if (locked) return g.ui.toast(`${out.name} unlocks at level ${r.level}.`, 'info');
+      g.audio.sfx('click');
+      p.sel = r.id;
+      ui.renderPanel();
+    },
+  }, [
+    h('span', { class: 'kc-name', text: out.name }),
+    h('span', { class: 'kc-img', html: itemIconHTML(r.out, 58) }),
+    h('span', { class: 'kc-sell', html: `🪙 <b>${out.sell * (r.qty || 1)}</b>` }),
+    h('span', { class: 'kc-state', text: locked ? `🔒 Level ${r.level}` : can ? '✓ Ready to cook' : `Missing ${missing}` }),
+  ]);
+}
+function recipeBook(ui, p, tab) {
+  const g = ui.game;
+  // ready-to-cook recipes first, then the rest of what you've unlocked, then locked ones by level
+  const rank = (r) => (g.state.level < r.level ? 2 : g.canCook(r) ? 0 : 1);
+  const list = RECIPES.filter((r) => tab === 'all' || r.cat === tab)
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => rank(a.r) - rank(b.r) || (rank(a.r) === 2 ? a.r.level - b.r.level : 0) || a.i - b.i)
+    .map((x) => x.r);
+  const per = 6;
+  const pages = Math.max(1, Math.ceil(list.length / per));
+  const page = Math.min(p.pages[tab] || 0, pages - 1);
+  const turn = (d) => {
+    p.pages[tab] = (page + d + pages) % pages;
+    g.audio.sfx('click');
+    ui.renderPanel();
+  };
+  const wrap = h('div', { class: 'kbook' });
+  wrap.append(h('p', { class: 'kbook-sub', text: 'Cook recipes to sell for coins! Tap a recipe to see what it needs.' }));
+  wrap.append(h('div', { class: 'kbook-spread' }, [
+    h('button', { class: 'kpage-btn', 'aria-label': 'Previous page', disabled: pages < 2, onclick: () => turn(-1), html: '◀' }),
+    h('div', { class: 'kgrid' }, list.slice(page * per, page * per + per).map((r) => recipeCard(ui, p, r))),
+    h('button', { class: 'kpage-btn', 'aria-label': 'Next page', disabled: pages < 2, onclick: () => turn(1), html: '▶' }),
+  ]));
+  const readyN = list.filter((r) => g.state.level >= r.level && g.canCook(r)).length;
+  wrap.append(h('div', { class: 'kpage-info' }, [h('span', { text: `Page ${page + 1}/${pages}` }), h('span', { text: readyN ? `🔥 ${readyN} ready to cook` : 'Grow, fish and farm to gather ingredients' })]));
+  return wrap;
+}
+function recipeDetail(ui, p) {
+  const g = ui.game;
+  const s = g.state;
+  const r = RECIPES.find((x) => x.id === p.sel);
+  const out = ITEMS[r.out];
+  const near = g.world?.id === 'palmora' && g.home.kitchenPos && g.player.pos.distanceTo(g.home.kitchenPos) < 9;
+  let max = Math.min(10, ...Object.entries(r.inputs).map(([k, n]) => Math.floor(g.ingredientCount(k) / n)));
+  const wrap = h('div', { class: 'kdetail' });
+  const ings = Object.entries(r.inputs).map(([k, n]) => {
+    const have = g.ingredientCount(k);
+    const ok = have >= n;
+    return h('div', { class: `kd-ing ${ok ? 'ok' : 'no'}`, 'data-tip-title': ingName(k), 'data-tip': ok ? 'You have enough.' : ingSource(k) }, [
+      h('span', { class: 'kd-icon', html: ingIcon(k, 52) }),
+      h('b', { class: 'kd-count', html: `${ok ? '✓' : '✗'} ${Math.min(have, 999)}/${n}` }),
+      h('small', { text: ingName(k) }),
+    ]);
+  });
+  const parts = [];
+  ings.forEach((x, i) => {
+    if (i) parts.push(h('span', { class: 'kd-op', text: '+' }));
+    parts.push(x);
+  });
+  parts.push(h('span', { class: 'kd-op', text: '=' }), h('div', { class: 'kd-out' }, [h('span', { class: 'kd-icon', html: itemIconHTML(r.out, 64) }), h('b', { text: `${r.qty > 1 ? `${r.qty}× ` : ''}${out.name}` })]));
+  // choose which fish to use for "any fish" style inputs
+  p.fishPick = p.fishPick || {};
+  const fishKeys = Object.keys(r.inputs).filter((k) => FISH_INPUTS[k]);
+  const plans = {};
+  const pickers = fishKeys.map((k) => {
+    const need = r.inputs[k];
+    const key = `${r.id}:${k}`;
+    const cands = fishFor(k, s.inventory);
+    const plan = g.fishPlan(k, need, p.fishPick[key]);
+    plans[k] = plan;
+    const choose = (pick) => {
+      p.fishPick[key] = pick;
+      g.audio.sfx('click');
+      ui.renderPanel();
+    };
+    const box = h('div', { class: 'kd-fish' });
+    box.append(h('div', { class: 'kd-fish-head' }, [
+      h('b', { text: `🎣 Choose ${need > 1 ? `${need} fish` : 'the fish'} to use` }),
+      h('span', { class: 'muted small', text: FISH_INPUTS[k].desc }),
+      cands.length > 1 ? btn('Use cheapest', () => choose(null), 'small ghost') : null,
+    ].filter(Boolean)));
+    if (!cands.length) {
+      box.append(h('p', { class: 'muted small', text: `You don't have a suitable fish yet. ${ingSource(k)}` }));
+      return box;
+    }
+    if (need === 1) {
+      // tap a fish to use it
+      box.append(h('div', { class: 'kd-fish-list', role: 'radiogroup', 'aria-label': 'Fish to use' }, cands.map((id) => {
+        const it = ITEMS[id];
+        const on = plan && plan[id] > 0;
+        return h('button', { class: `kfish ${on ? 'on' : ''}`, role: 'radio', 'aria-checked': on ? 'true' : 'false', onclick: () => choose({ [id]: 1 }) }, [
+          h('span', { class: 'kfish-img', html: itemIconHTML(id, 40) }),
+          h('span', { class: 'kfish-name', text: it.name }),
+          h('small', { html: `×${s.inventory[id]} · 🪙 ${it.sell}` }),
+        ]);
+      })));
+    } else {
+      // one dropdown per fish slot
+      const slots = [];
+      for (const [id, c] of Object.entries(plan || {})) for (let i = 0; i < c; i++) slots.push(id);
+      while (slots.length < need) slots.push(cands[0]);
+      const list = h('div', { class: 'kd-fish-slots' });
+      slots.forEach((cur, i) => {
+        const sel = h('select', {
+          'aria-label': `Fish ${i + 1}`,
+          onchange: (e) => {
+            const next = [...slots];
+            next[i] = e.target.value;
+            const pick = {};
+            for (const f of next) pick[f] = (pick[f] || 0) + 1;
+            if (Object.entries(pick).some(([f, c]) => c > (s.inventory[f] || 0))) {
+              g.ui.toast(`You only have ${s.inventory[e.target.value]} ${ITEMS[e.target.value].name}.`, 'warn');
+              ui.renderPanel();
+              return;
+            }
+            choose(pick);
+          },
+        }, cands.map((id) => {
+          const o = h('option', { value: id, text: `${ITEMS[id].name} (×${s.inventory[id]}) · 🪙 ${ITEMS[id].sell}` });
+          if (id === cur) o.selected = true;
+          return o;
+        }));
+        list.append(h('label', { class: 'kd-fish-slot' }, [h('span', { class: 'kfish-img', html: itemIconHTML(cur, 30) }), sel]));
+      });
+      box.append(list);
+    }
+    // warn before using up something valuable
+    const pricey = Object.keys(plan || {}).filter((id) => ITEMS[id].sell >= 90);
+    if (pricey.length) box.append(h('p', { class: 'warnline small', text: `⚠ ${pricey.map((id) => ITEMS[id].name).join(', ')} ${pricey.length > 1 ? 'are' : 'is'} worth a lot (🪙 ${pricey.map((id) => ITEMS[id].sell).join(', ')}). Sure you want to cook ${pricey.length > 1 ? 'them' : 'it'}?` }));
+    return box;
+  });
+  const fishOpts = Object.fromEntries(fishKeys.map((k) => [k, plans[k]]));
+  // how many times we can cook with this exact fish choice
+  const fishTimes = fishKeys.length ? Math.min(...fishKeys.map((k) => (plans[k] ? Math.min(...Object.entries(plans[k]).map(([id, c]) => Math.floor((s.inventory[id] || 0) / c))) : 0))) : Infinity;
+  max = Math.min(max, fishTimes);
+  const bar = h('div', { class: 'kd-progress', 'aria-hidden': 'true' }, [h('i')]);
+  const cookN = (n) => {
+    if (p.cooking) return;
+    p.cooking = true;
+    wrap.classList.add('cooking');
+    g.audio.sfx('water');
+    g.player?.char.play('pickup', 0.9);
+    requestAnimationFrame(() => (bar.firstChild.style.width = '100%'));
+    setTimeout(() => {
+      p.cooking = false;
+      if (!g.ui.panel || g.ui.panel !== p) return;
+      let made = 0;
+      for (let i = 0; i < n; i++) if (g.cook(r.id, { fish: fishOpts })) made++;
+      if (made) {
+        g.ui.toast(`🍳 Cooked ${made * (r.qty || 1)}× ${out.icon} ${out.name}!`, 'good');
+        g.ui.refreshHud();
+      }
+      ui.renderPanel();
+    }, 900);
+  };
+  const missing = Object.entries(r.inputs).filter(([k, n]) => g.ingredientCount(k) < n);
+  const kids = [
+    h('button', { class: 'btn small ghost kd-back', onclick: () => { p.sel = null; ui.renderPanel(); }, html: '◀ All recipes' }),
+    h('div', { class: 'kd-title' }, [h('b', { text: out.name }), h('span', { html: `Sells for 🪙 <b>${out.sell}</b> each${out.heal ? ` · Heals ❤ ${out.heal}` : ''} · ✨ ${r.cat === 'basics' ? 4 + r.level : 10 + r.level * 4} XP` })]),
+    h('div', { class: 'kd-row' }, parts),
+    h('p', { class: 'kd-help', text: 'Left number: how many you have · Right number: how many you need' }),
+    ...pickers,
+    missing.length ? h('ul', { class: 'kd-missing' }, missing.map(([k]) => h('li', { html: `${ingIcon(k, 18)} <b>${escapeHtml(ingName(k))}:</b> ${escapeHtml(ingSource(k))}` }))) : null,
+    bar,
+    h('div', { class: 'kd-actions' }, [
+      btn(`🔥 Cook 1`, () => cookN(1), 'primary', !near || max < 1 || p.cooking),
+      max > 1 ? btn(`Cook ×${max}`, () => cookN(max), '', !near || p.cooking) : null,
+      h('span', { class: 'muted small', text: near ? `You have ${s.inventory[r.out] || 0} ${out.name}` : 'Walk up to your kitchen to cook.' }),
+    ]),
+  ];
+  wrap.append(...kids.filter(Boolean));
+  return wrap;
 }
 
 function buyTab(ui, shop) {
@@ -834,8 +1142,9 @@ function buyTab(ui, shop) {
     const locked = s.level < (e.level || 1);
     const afford = s.coins >= coins && s.gems >= gems;
     let action;
-    if (info.owned) action = h('span', { class: 'tag', text: 'Owned' });
+    if (info.owned) action = h('span', { class: 'tag', text: info.ownedText || 'Owned' });
     else if (locked) action = h('span', { class: 'lock', text: `🔒 Lv ${e.level}` });
+    else if (info.blocked) action = h('span', { class: 'lock', text: info.blocked });
     else action = btn('Buy', () => { g.buy(e, shop); ui.refreshPanel(); }, afford ? 'primary' : '', !afford, { 'aria-label': `Buy ${info.name}` });
     list.append(
       h('div', { class: `shop-row ${info.owned ? 'owned' : ''} ${locked ? 'locked' : ''}`, 'data-tip-title': info.name, 'data-tip': `${info.desc}${locked ? `\nUnlocks at level ${e.level}.` : ''}${info.owned ? '\nYou already own this.' : ''}` }, [
@@ -903,7 +1212,7 @@ function upgradeTab(ui) {
   wrap.append(
     h('div', { class: 'card wide' }, [
       h('h3', { text: `Next: ${next.name}` }),
-      h('p', { class: 'muted', text: `${next.desc} Unlocks ${next.plots} farm plots.` }),
+      h('p', { class: 'muted', text: `${next.desc} A bigger home gives you +15 max health.` }),
       h('ul', { class: 'reqs' }, reqs.map(([l, have, need, txt]) => h('li', { class: have >= need ? 'ok' : 'no', html: `${have >= need ? '✔' : '✖'} ${l}: <b>${txt}</b> <small>(have ${formatNum(have)})</small>` }))),
       btn('🔨 Build it!', () => { if (g.home.upgrade()) ui.refreshPanel(); }, 'primary big', !g.home.canUpgrade().ok),
       h('p', { class: 'muted small', text: 'Driftwood & stones wash up on beaches daily — or buy them from Bob.' }),

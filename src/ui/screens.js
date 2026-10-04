@@ -21,6 +21,7 @@ export function showTitle(game) {
     if (save && !confirmNew()) return;
     showCreator(game);
   }, save ? '' : 'primary');
+  if (game.input.isTouch) add('⛶ Full screen', () => game.toggleFullscreen());
   add('⚙️ Settings', () => ui.openPanel('settings'));
   add('❔ How to Play', () => ui.openPanel('help'));
   const screen = el('div', { class: 'screen title' }, [

@@ -1,0 +1,12 @@
+{
+  "name": "Tidewander",
+  "short_name": "Tidewander",
+  "description": "A cozy 3D island life adventure.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#1b2a35",
+  "theme_color": "#24566e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

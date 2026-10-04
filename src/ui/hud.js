@@ -19,15 +19,21 @@ export class Hud {
     this.mapWrap = el('button', { class: 'hud-minimap', 'aria-label': 'Open map (M)', onclick: () => this.ui.openPanel('map') });
     this.mapCanvas = el('canvas', { width: 150, height: 150 });
     this.mapWrap.append(this.mapCanvas, el('span', { class: 'kbd-hint', text: 'M' }));
+    this.fsBtn = el('button', { class: 'menu-btn fs-btn', 'aria-label': 'Full screen', 'data-tip-title': 'Full screen', 'data-tip': 'Hide the browser bars. Works best with your phone sideways.', onclick: () => this.game.toggleFullscreen() }, [el('span', { class: 'mi', text: '⛶' })]);
     this.topRight.append(this.money, this.clock, this.mapWrap);
     this.menu = el('nav', { class: 'hud-menu', 'aria-label': 'Game menu' });
     const tips = { bag: 'Your items, gear, Fishdex and stats.', quests: 'Your quests, hints and daily bounties.', map: 'Island map and sea chart.', wardrobe: 'Change clothes, hair and pets.', pause: 'Pause, settings, help and saving.' };
     const btn = (icon, label, key, panel) =>
       el('button', { class: 'menu-btn', 'aria-label': `${label} (${key})`, 'data-tip-title': `${label} (${key})`, 'data-tip': tips[panel], onclick: () => this.ui.openPanel(panel) }, [el('span', { class: 'mi', text: icon }), el('span', { class: 'ml', text: label }), el('kbd', { text: key })]);
-    this.menu.append(btn('🎒', 'Bag', 'I', 'bag'), btn('📜', 'Quests', 'J', 'quests'), btn('🗺️', 'Map', 'M', 'map'), btn('👕', 'Style', 'C', 'wardrobe'), btn('⚙️', 'Menu', 'Esc', 'pause'));
+    this.menu.append(this.fsBtn, btn('🎒', 'Bag', 'I', 'bag'), btn('📜', 'Quests', 'J', 'quests'), btn('🗺️', 'Map', 'M', 'map'), btn('👕', 'Style', 'C', 'wardrobe'), btn('⚙️', 'Menu', 'Esc', 'pause'));
     this.gear = el('div', { class: 'hud-gear' });
     this.controlsHint = el('div', { class: 'hud-controls hint-only', html: '<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>E</kbd> interact · <kbd>F</kbd> attack · drag to look' });
-    this.wp = el('div', { class: 'waypoint hidden', 'aria-hidden': 'true' }, [el('div', { class: 'wp-arrow' }), el('div', { class: 'wp-label' })]);
+    // small dart-shaped arrow: the notched tail makes the head obvious at a glance
+    this.wp = el('div', { class: 'waypoint hidden', 'aria-hidden': 'true' }, [
+      el('div', { class: 'wp-arrow', html: '<svg viewBox="0 0 32 32"><path d="M3 5 L29 16 L3 27 L10 16 Z" fill="#ffd34d" stroke="#2a2534" stroke-width="2.6" stroke-linejoin="round"/></svg>' }),
+      el('div', { class: 'wp-label' }),
+    ]);
+    this.wpDir = this.wp.querySelector('.wp-arrow');
     h.append(this.wp, this.profile, this.tracker, this.topRight, this.menu, this.gear, this.controlsHint);
     this.wpT = 0;
     this._v = new THREE.Vector3();
@@ -109,7 +115,10 @@ export class Hud {
     this.updateWaypoint(dt);
   }
 
-  /** Yellow arrow that points at the current objective (on screen or at the edge). */
+  /**
+   * Objective guide: a pin above the target when it's on screen, a round badge with a bold
+   * arrow at the screen edge when it isn't, plus a glowing arrow on the ground at your feet.
+   */
   updateWaypoint(dt) {
     const g = this.game;
     this.wpT -= dt;
@@ -126,11 +135,11 @@ export class Hud {
     }
     const t = this.target;
     const hide = !t || g.mode !== 'play' || g.isPaused() || g.cam.mode !== 'follow';
+    const pos = t && (t.follow ? t.follow.position : t.pos);
     if (hide) {
       this.wp.classList.add('hidden');
       return;
     }
-    const pos = t.follow ? t.follow.position : t.pos;
     const p = g.player.pos;
     const dist = Math.hypot(pos.x - p.x, pos.z - p.z);
     if (dist < 2.5) {
@@ -150,12 +159,20 @@ export class Hud {
       x = W - x;
       y = H - y;
     }
-    // keep the arrow inside a safe rectangle that avoids the bottom HUD
-    const L = 80;
-    const R = W - 80;
-    const T = 90;
-    const B = H - 150;
-    const onScreen = !behind && x > L && x < R && y > T && y < B;
+    const x0 = x;
+    const y0 = y;
+    // keep the badge inside a safe rectangle that avoids the bottom HUD
+    const L = 60;
+    const R = W - 60;
+    const T = 70;
+    const B = H - 160;
+    // a target hidden behind the quest tracker or clock/minimap counts as off-screen
+    const under = (el) => {
+      const r = el.getBoundingClientRect();
+      return x > r.left - 30 && x < r.right + 30 && y > r.top - 30 && y < r.bottom + 50;
+    };
+    const covered = under(this.tracker) || under(this.topRight);
+    const onScreen = !behind && !covered && x > L && x < R && y > T && y < B;
     let angle = 90;
     if (!onScreen) {
       const cx = (L + R) / 2;
@@ -163,20 +180,26 @@ export class Hud {
       let dx = x - cx;
       let dy = y - cy;
       if (Math.abs(dx) + Math.abs(dy) < 1) dy = 1;
-      const k = Math.min((R - L) / 2 / Math.abs(dx || 1e-6), (B - T) / 2 / Math.abs(dy || 1e-6));
+      let k = Math.min((R - L) / 2 / Math.abs(dx || 1e-6), (B - T) / 2 / Math.abs(dy || 1e-6));
+      if (covered && !behind) k = Math.min(k, 1); // stay where it is, the HUD-avoidance below nudges it clear
       x = cx + dx * k;
       y = cy + dy * k;
       angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-      // don't sit on top of the quest tracker in the top-left corner
-      const tr = this.tracker.getBoundingClientRect();
-      if (x < tr.right + 20 && y < tr.bottom + 20) {
-        if (Math.abs(dx) > Math.abs(dy)) y = Math.max(y, tr.bottom + 40);
-        else x = Math.max(x, tr.right + 70);
+      // don't sit on top of the quest tracker (top-left) or the clock & minimap (top-right):
+      // slide down below them, then aim the arrow from there at the real target
+      const tx = x0;
+      const ty = y0;
+      for (const box of [this.tracker, this.topRight]) {
+        const r = box.getBoundingClientRect();
+        if (x > r.left - 30 && x < r.right + 30 && y < r.bottom + 40) y = r.bottom + 46;
       }
+      if (!behind) angle = (Math.atan2(ty - y, tx - x) * 180) / Math.PI;
     }
     this.wp.classList.toggle('edge', !onScreen);
+    // labels hug the inside of the screen
+    this.wp.classList.toggle('label-up', !onScreen && y > H * 0.6);
     this.wp.style.transform = `translate(${x}px, ${y}px)`;
-    this.wp.firstChild.style.transform = `rotate(${angle - 90}deg)`;
+    this.wpDir.style.transform = `rotate(${angle}deg)`;
     const label = `${t.label} · ${Math.round(dist)}m`;
     if (label !== this._wpLabel) {
       this._wpLabel = label;

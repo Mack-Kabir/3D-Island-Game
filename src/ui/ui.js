@@ -38,25 +38,78 @@ export class UI {
   }
 
   // ── tooltips ───────────────────────────────────
+  /**
+   * Details never pop up just because the cursor is resting somewhere. They appear when you
+   * tap/click an info element, long-press anything (buttons too), or reach it with the keyboard.
+   */
   initTooltips() {
-    const DELAY = 650;
+    const LONG_PRESS = 500;
+    const sel = '[data-tip], [data-tip-title]';
+    const interactive = 'button, a, input, select, textarea, [role="button"], [role="tab"], .slot';
     const show = (target) => {
       const title = target.getAttribute('data-tip-title') || '';
       const desc = target.getAttribute('data-tip') || '';
       if (!title && !desc) return;
       const r = target.getBoundingClientRect();
       this.showTip(title, desc, r.left + r.width / 2, r.top, r.bottom);
+      this._tipFor = target;
     };
-    const onOver = (e) => {
-      const t = e.target.closest?.('[data-tip], [data-tip-title]');
-      if (t === this._tipFor) return;
-      this.hideTip();
-      this._tipFor = t;
-      if (t) this._tipTimer = setTimeout(() => show(t), DELAY);
-    };
-    document.addEventListener('pointerover', onOver);
-    document.addEventListener('focusin', onOver);
-    document.addEventListener('pointerdown', () => this.hideTip(true));
+    let press = null;
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        const t = e.target.closest?.(sel);
+        // taps on the 3D world are handled by updateWorldTip (tap the same thing again to close)
+        const onWorld = e.target === this.game.renderer.domElement && this._worldTip;
+        if ((!t || t !== this._tipFor) && !onWorld) this.hideTip(true);
+        clearTimeout(press?.timer);
+        press = t ? { t, x: e.clientX, y: e.clientY, timer: setTimeout(() => ((press.long = true), show(t)), LONG_PRESS) } : null;
+      },
+      true,
+    );
+    document.addEventListener(
+      'pointermove',
+      (e) => {
+        if (press && !press.long && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) {
+          clearTimeout(press.timer);
+          press = null;
+        }
+      },
+      true,
+    );
+    const release = () => clearTimeout(press?.timer);
+    document.addEventListener('pointerup', release, true);
+    document.addEventListener('pointercancel', release, true);
+    document.addEventListener(
+      'click',
+      (e) => {
+        // a long-press only shows the details — it doesn't also press the button
+        if (press?.long) {
+          e.preventDefault();
+          e.stopPropagation();
+          press = null;
+          return;
+        }
+        press = null;
+        const t = e.target.closest?.(sel);
+        if (!t || t.closest(interactive)) return;
+        // tapping an info element toggles its details
+        if (this._tipFor === t && !this.tipEl.classList.contains('hidden')) this.hideTip(true);
+        else show(t);
+      },
+      true,
+    );
+    document.addEventListener('contextmenu', (e) => {
+      if (e.target.closest?.(sel)) e.preventDefault();
+    });
+    // keyboard users still get details when they tab onto something
+    document.addEventListener('focusin', (e) => {
+      const t = e.target.closest?.(sel);
+      clearTimeout(this._tipTimer);
+      if (t && t.matches(':focus-visible')) this._tipTimer = setTimeout(() => show(t), 400);
+      else if (this._tipFor && !this._worldTip) this.hideTip(true);
+    });
+    document.addEventListener('keydown', (e) => e.code === 'Escape' && this.hideTip(true));
     document.addEventListener('scroll', () => this.hideTip(true), true);
   }
   showTip(title, desc, x, top, bottom = top) {
@@ -76,8 +129,8 @@ export class UI {
     if (forget) this._tipFor = null;
     this._worldTip = null;
   }
-  /** Hovering (after a moment) or clicking/tapping (instantly) things in the 3D world. */
-  updateWorldTip(dt) {
+  /** Tapping / clicking things in the 3D world shows their name and details (never on hover). */
+  updateWorldTip() {
     const g = this.game;
     const input = g.input;
     const active = g.mode === 'play' && !g.isPaused();
@@ -85,46 +138,24 @@ export class UI {
       if (this._worldTip) this.hideTip(true);
       return;
     }
-    // click / tap: show the name right away
-    if (input.mouse.clicked) {
+    if (input.mouse.clicked && !g.farmTools?.active) {
       const at = { x: input.mouse.lastX, y: input.mouse.lastY };
       const thing = this.pickWorldThing(at, 60) || this.groundThing(at);
-      if (thing) {
+      // tapping the same thing again closes it
+      if (thing && this._worldTip && thing.key === this._worldTip.key) this.hideTip(true);
+      else if (thing) {
         this.showWorldTip(thing, at);
-        this._pinnedUntil = performance.now() + 3500;
+        this._pinnedUntil = performance.now() + 5000;
         this._pinAt = at;
-      }
+      } else if (this._worldTip) this.hideTip(true);
       return;
     }
-    if (this._pinnedUntil) {
+    if (this._worldTip) {
       const m = input.hover;
-      const moved = m && this._pinAt && Math.hypot(m.x - this._pinAt.x, m.y - this._pinAt.y) > 70;
-      if (performance.now() < this._pinnedUntil && !moved) return;
-      this._pinnedUntil = 0;
-      this.hideTip(true);
+      const moved = m && this._pinAt && Math.hypot(m.x - this._pinAt.x, m.y - this._pinAt.y) > 120;
+      const walked = Math.abs(input.axis().x) + Math.abs(input.axis().y) > 0.1;
+      if (performance.now() > this._pinnedUntil || moved || walked) this.hideTip(true);
     }
-    const m = input.hover;
-    if (!m || input.mouse.down || input.isTouch) {
-      if (this._worldTip) this.hideTip(true);
-      return;
-    }
-    this._wtT = (this._wtT || 0) - dt;
-    if (this._wtT > 0) return;
-    this._wtT = 0.1;
-    const best = this.pickWorldThing(m, 46) || this.groundThing(m);
-    if (!best) {
-      if (this._worldTip) this.hideTip(true);
-      this._hoverThing = null;
-      return;
-    }
-    if (best.key !== this._hoverThing?.key) {
-      this._hoverThing = best;
-      this._hoverSince = performance.now();
-      if (this._worldTip) this.hideTip(true);
-      return;
-    }
-    this._hoverThing = best;
-    if (!this._worldTip && performance.now() - this._hoverSince > 550) this.showWorldTip(best, m);
   }
 
   pickWorldThing(at, radius) {

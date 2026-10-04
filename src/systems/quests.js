@@ -3,7 +3,7 @@ import { FISH_BY_ID, tierIndex } from '../data/fish.js';
 import { ITEMS } from '../data/items.js';
 import { mulberry32, hashString } from '../core/utils.js';
 
-const EVENTS = ['catch', 'sell', 'talk', 'visit', 'defeat', 'plant', 'harvest', 'build', 'cook', 'compete', 'buy', 'collect', 'inventory', 'level', 'own'];
+const EVENTS = ['catch', 'sell', 'talk', 'visit', 'defeat', 'plant', 'harvest', 'build', 'cook', 'compete', 'buy', 'collect', 'inventory', 'level', 'own', 'construct', 'water', 'fertilize', 'makefeed', 'sleep', 'wear', 'equip', 'gift', 'bounty'];
 
 export class QuestSystem {
   constructor(game) {
@@ -61,7 +61,7 @@ export class QuestSystem {
 
   /** Side quests this NPC can offer right now. */
   offers(npcId) {
-    return Object.values(QUESTS).filter((q) => q.giver === npcId && !this.s.active[q.id] && !this.s.done.includes(q.id) && (!q.requires || this.s.done.includes(q.requires)));
+    return Object.values(QUESTS).filter((q) => q.giver === npcId && !this.s.active[q.id] && !this.s.done.includes(q.id) && (!q.requires || this.s.done.includes(q.requires)) && (!q.minLevel || this.game.state.level >= q.minLevel));
   }
 
   matches(obj, ev, d) {
@@ -71,6 +71,9 @@ export class QuestSystem {
         if (ev !== 'catch') return 0;
         const f = d.fish;
         if (t === '*') return f.tier !== 'junk' ? 1 : 0;
+        if (t === 'lure') return f.tier !== 'junk' && d.bait && d.bait !== 'bait_worm' ? 1 : 0;
+        if (t === 'boat') return f.tier !== 'junk' && d.boat ? 1 : 0;
+        if (t.startsWith('rod:')) return f.tier !== 'junk' && d.rod === t.slice(4) ? 1 : 0;
         if (t === 'night') return d.night && f.tier !== 'junk' ? 1 : 0;
         if (t.startsWith('tier:')) return tierIndex(f.tier) >= tierIndex(t.slice(5)) ? 1 : 0;
         if (t.startsWith('island:')) return d.island === t.slice(7) ? 1 : 0;
@@ -105,6 +108,16 @@ export class QuestSystem {
         return d.item === t ? 1 : 0;
       case 'compete':
         return ev === 'compete' && d.place <= t ? 1 : 0;
+      // simple "do this" objectives: water, fertilize, makefeed, sleep, wear, equip, gift, bounty
+      case 'water':
+      case 'fertilize':
+      case 'makefeed':
+      case 'sleep':
+      case 'wear':
+      case 'equip':
+      case 'gift':
+      case 'bounty':
+        return ev === obj.type && (!t || t === '*' || d.id === t || d.npc === t) ? d.count ?? 1 : 0;
       default:
         return 0;
     }
@@ -121,12 +134,17 @@ export class QuestSystem {
         return s.level >= obj.target ? obj.count : 0;
       case 'build':
         return s.house.level >= obj.target ? obj.count : 0;
+      case 'construct':
+        return g.home.isBuilt(obj.target) ? obj.count ?? 1 : 0;
       case 'own': {
         const [kind, id] = obj.target.split(':');
         if (kind === 'boat') return g.boatTierOf(s.boat) >= g.boatTierOf(id) ? 1 : 0;
         if (kind === 'weapon') return g.ownsWeaponAtLeast(id) ? 1 : 0;
         if (kind === 'cosmetics') return s.cosmetics.length >= Number(id) ? 1 : 0;
         if (kind === 'rod') return s.rods.includes(id) ? 1 : 0;
+        if (kind === 'irrigation') return (s.farm.irrigation || 0) >= Number(id) ? 1 : 0;
+        if (kind === 'pet') return s.pets.length > 0 ? 1 : 0;
+        if (kind === 'dex') return Object.keys(s.fishdex).length >= Number(id) ? 1 : 0;
         return 0;
       }
       default:
@@ -256,6 +274,7 @@ export class QuestSystem {
         if (bo.progress >= bo.count) {
           bo.done = true;
           this.game.ui.banner('Bounty Complete!', bo.text, '📋');
+          setTimeout(() => this.game.events.emit('bounty', {}), 0);
           this.game.audio.sfx('questDone');
           this.game.give(bo.reward, { source: 'bounty' });
           if (b.list.every((x) => x.done)) {
