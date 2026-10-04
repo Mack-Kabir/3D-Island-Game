@@ -111,3 +111,35 @@ export function itemIconHTML(id, size = 40) {
   if (it.type === 'fish') return fishSVG(FISH_BY_ID[it.fish], size);
   return `<span class="emoji" style="font-size:${Math.round(size * 0.72)}px" aria-hidden="true">${escapeHtml(it.icon)}</span>`;
 }
+
+const SELL_WHERE = {
+  fish: 'Sell to Megan at the Palmora fish market (or Ross, Sarah, Grace, Pete, Madison).',
+  fruit: 'Sell to Chloe at the fruit stand. Can be cooked into food.',
+  product: 'Sell to Chloe at the fruit stand. Eat from your Bag to heal.',
+  collectible: 'Sell to Chloe at the fruit stand.',
+  material: 'Used to build your house. Bob buys extras.',
+  treasure: 'Sell to Hank (Ember Isle), Pete (Skull Cay) or Madison (night).',
+  seed: 'Plant it on a soil patch at your homestead.',
+  bait: 'Used up one per cast. Makes fish bite faster and rarer.',
+  decor: 'Open your Bag and choose "Place at home".',
+  tool: 'A tool — kept forever.',
+  special: 'Open it from your Bag.',
+  trophy: 'A trophy to be proud of.',
+};
+
+/** Tooltip text for any inventory item. */
+export function itemTip(id, count = null) {
+  const it = ITEMS[id];
+  if (!it) return { title: id, desc: '' };
+  const lines = [];
+  if (it.type === 'fish') lines.push(`${TIERS[it.tier].icon} ${TIERS[it.tier].name} fish`);
+  if (it.desc) lines.push(it.desc);
+  if (it.sell) lines.push(`Worth 🪙 ${it.sell} each${count ? ` · You have ${count}` : ''}`);
+  if (it.heal) lines.push(`Heals ❤ ${it.heal}`);
+  if (SELL_WHERE[it.type]) lines.push(SELL_WHERE[it.type]);
+  return { title: it.name, desc: lines.join('\n') };
+}
+
+export function tipAttrs(tip) {
+  return { 'data-tip-title': tip.title, 'data-tip': tip.desc };
+}

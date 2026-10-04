@@ -132,55 +132,29 @@ export class Character {
     head.position.y = 0.92;
     hips.add(head);
     this.head = head;
-    const skull = part(geo('skull', () => new THREE.SphereGeometry(0.27, 16, 12)), skin);
-    skull.scale.set(1, 1.02, 0.96);
+    // head with a hand-drawn face painted onto it (see faceTexture)
+    const hairHex = colorOf(L.hairColor, HAIR_COLORS);
+    const faceKey = { skin: colorOf(L.skin, SKIN_TONES), eyes: colorOf(L.eyes ?? 0, EYE_COLORS), brow: hairHex, fem: fem };
+    this.faceOpen = faceTexture(faceKey, false);
+    this.faceClosed = faceTexture(faceKey, true);
+    this.headMat = this.mat('#ffffff', this.faceOpen);
+    const skull = part(geo('skull', () => new THREE.SphereGeometry(0.27, 40, 28)), this.headMat);
+    skull.scale.set(1, 1.02, 0.97);
     head.add(skull);
     // ears
     for (const sx of [-1, 1]) {
       const ear = part(geo('ear', () => new THREE.SphereGeometry(0.06, 8, 6)), skin, 0.012);
-      ear.position.set(sx * 0.26, -0.01, 0);
-      ear.scale.set(0.5, 1, 0.8);
+      ear.position.set(sx * 0.262, -0.02, -0.01);
+      ear.scale.set(0.45, 1, 0.75);
       head.add(ear);
     }
-    // eyes (simple ink ovals with a highlight — anime-ish)
-    for (const sx of [-1, 1]) {
-      const eye = new THREE.Mesh(geo('eye', () => new THREE.SphereGeometry(0.042, 10, 8)), eyeMat);
-      eye.position.set(sx * 0.095, 0.0, 0.245);
-      eye.scale.set(0.8, fem ? 1.25 : 1.05, 0.5);
-      head.add(eye);
-      const hl = new THREE.Mesh(geo('hl', () => new THREE.SphereGeometry(0.013, 6, 4)), geo('hlMat', () => new THREE.MeshBasicMaterial({ color: '#ffffff' })));
-      hl.position.set(sx * 0.095 + 0.012, 0.018, 0.266);
-      head.add(hl);
-      if (fem) {
-        const lash = new THREE.Mesh(geo('lash', () => new THREE.BoxGeometry(0.07, 0.012, 0.01)), eyeMat);
-        lash.position.set(sx * 0.1 + sx * 0.01, 0.055, 0.25);
-        lash.rotation.z = -sx * 0.25;
-        head.add(lash);
-      }
-      // eyebrows
-      const brow = new THREE.Mesh(geo('brow', () => new THREE.BoxGeometry(0.075, 0.018, 0.01)), hairMat);
-      brow.position.set(sx * 0.1, 0.09, 0.245);
-      brow.rotation.z = sx * 0.12;
-      head.add(brow);
-    }
-    this.eyes = head.children.filter((c) => c.geometry === geoCache.get('eye'));
-    // blush
-    const blushMat = geo('blushMat', () => new THREE.MeshBasicMaterial({ color: '#f29a9a', transparent: true, opacity: 0.55 }));
-    for (const sx of [-1, 1]) {
-      const b = new THREE.Mesh(geo('blush', () => new THREE.CircleGeometry(0.04, 10)), blushMat);
-      b.position.set(sx * 0.16, -0.07, 0.226);
-      b.rotation.y = sx * 0.5;
-      b.scale.y = 0.6;
-      head.add(b);
-    }
-    // nose + mouth
-    const nose = part(geo('nose', () => new THREE.SphereGeometry(0.03, 6, 5)), skin, 0);
-    nose.position.set(0, -0.05, 0.27);
+    // a soft nose bump so the profile isn't flat
+    const nose = part(geo('nose', () => new THREE.SphereGeometry(0.028, 8, 6)), skin, 0);
+    nose.position.set(0, -0.045, 0.262);
+    nose.scale.set(0.9, 1, 0.8);
     head.add(nose);
-    const mouth = new THREE.Mesh(geo('mouth', () => new THREE.TorusGeometry(0.035, 0.009, 4, 10, Math.PI)), eyeMat);
-    mouth.position.set(0, -0.12, 0.245);
-    mouth.rotation.z = Math.PI;
-    head.add(mouth);
+    this.eyes = [];
+    this.blinkT = 2 + Math.random() * 3;
 
     this.buildHair(head, hairMat, L.hair);
     if (L.hat) this.buildHat(head, L.hat);
@@ -248,76 +222,101 @@ export class Character {
   }
 
   buildHair(head, mat, style) {
-    const cap = (phi = 0.56, scale = 1.07, tilt = -0.35) => {
-      const g = geo(`cap${phi}`, () => new THREE.SphereGeometry(0.27, 16, 10, 0, Math.PI * 2, 0, Math.PI * phi));
+    // A cap that covers the crown and back of the head, tilted so the front
+    // hairline sits above the eyebrows and never covers the face.
+    const cap = (edge = 1.75, front = 0.155, scale = 1.07) => {
+      const R = 0.27 * scale;
+      const g = geo(`cap${edge}`, () => new THREE.SphereGeometry(0.27, 24, 14, 0, Math.PI * 2, 0, edge));
       const m = part(g, mat);
       m.scale.setScalar(scale);
-      m.rotation.x = tilt;
+      m.rotation.x = -(edge - Math.acos(Math.min(front / R, 0.99)));
       m.material.side = THREE.DoubleSide;
       head.add(m);
       return m;
     };
-    const blob = (x, y, z, r, sx = 1, sy = 1, sz = 1) => {
-      const m = part(geo('hairblob', () => new THREE.SphereGeometry(1, 10, 8)), mat);
+    const blob = (x, y, z, r, sx = 1, sy = 1, sz = 1, rz = 0) => {
+      const m = part(geo('hairblob', () => new THREE.SphereGeometry(1, 12, 9)), mat);
       m.position.set(x, y, z);
       m.scale.set(r * sx, r * sy, r * sz);
+      m.rotation.z = rz;
       head.add(m);
       return m;
     };
+    // fringe locks resting on the forehead, above the brows
+    const fringe = (n = 3, spread = 0.2, y = 0.2, tilt = 0.35) => {
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : i / (n - 1) - 0.5;
+        const x = t * spread;
+        const z = Math.sqrt(Math.max(0, 0.29 * 0.29 - x * x - y * y)) - 0.02;
+        blob(x, y, z, 0.075, 1.25, 0.7, 0.55, -t * tilt);
+      }
+    };
     switch (style) {
       case 'buzz':
-        cap(0.5, 1.03, -0.3);
+        cap(1.65, 0.17, 1.03);
         break;
       case 'spiky': {
-        cap(0.55, 1.07, -0.3);
-        for (let i = 0; i < 7; i++) {
-          const a = (i / 7) * Math.PI * 2;
-          const sp = part(geo('spike', () => new THREE.ConeGeometry(0.08, 0.24, 5)), mat);
-          sp.position.set(Math.cos(a) * 0.15, 0.25, Math.sin(a) * 0.15 - 0.04);
-          sp.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
+        cap(1.75, 0.16, 1.07);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          const sp = part(geo('spike', () => new THREE.ConeGeometry(0.075, 0.24, 5)), mat);
+          sp.position.set(Math.cos(a) * 0.14, 0.26, Math.sin(a) * 0.14 - 0.05);
+          sp.rotation.set(Math.sin(a) * 0.75, 0, -Math.cos(a) * 0.75);
           head.add(sp);
         }
-        blob(0, 0.13, 0.2, 0.1, 1.6, 0.5, 0.6);
+        for (const x of [-0.1, 0, 0.1]) {
+          const sp = part(geo('spike', () => new THREE.ConeGeometry(0.075, 0.24, 5)), mat);
+          sp.position.set(x, 0.21, 0.2);
+          sp.rotation.set(1.1, 0, x * 2);
+          head.add(sp);
+        }
         break;
       }
       case 'curly':
-        cap(0.6, 1.08, -0.25);
-        for (let i = 0; i < 12; i++) {
-          const a = (i / 12) * Math.PI * 2;
-          blob(Math.cos(a) * 0.24, 0.12 + Math.sin(i * 1.7) * 0.06, Math.sin(a) * 0.22 - 0.03, 0.1);
+        cap(1.8, 0.17, 1.09);
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2;
+          const front = Math.sin(a) > 0.55; // keep curls off the face
+          blob(Math.cos(a) * 0.25, front ? 0.22 : 0.1 + Math.sin(i * 1.7) * 0.05, Math.sin(a) * 0.23 - 0.03, 0.095);
         }
-        blob(0, 0.28, -0.02, 0.17);
+        blob(0, 0.29, -0.02, 0.16);
         break;
       case 'bob':
-        cap(0.68, 1.1, -0.18);
-        blob(0, 0.15, 0.2, 0.12, 2.0, 0.6, 0.6);
+        cap(2.05, 0.16, 1.1);
+        fringe(4, 0.26, 0.19);
+        for (const sx of [-1, 1]) blob(sx * 0.255, -0.08, -0.02, 0.09, 0.7, 1.5, 1.1);
         break;
       case 'long':
-        cap(0.62, 1.09, -0.25);
-        blob(0, -0.18, -0.12, 0.22, 1.25, 1.6, 0.6);
-        blob(0, 0.14, 0.2, 0.11, 2.0, 0.55, 0.6);
+        cap(1.95, 0.16, 1.09);
+        fringe(2, 0.16, 0.2, 0.6);
+        blob(0, -0.2, -0.13, 0.22, 1.25, 1.7, 0.6);
+        for (const sx of [-1, 1]) blob(sx * 0.24, -0.16, -0.04, 0.09, 0.7, 2.0, 1.0);
         break;
       case 'ponytail':
-        cap(0.58, 1.08, -0.3);
-        blob(0, 0.12, -0.27, 0.09);
-        blob(0, -0.08, -0.33, 0.1, 0.9, 1.9, 0.9);
-        blob(0, 0.14, 0.2, 0.1, 1.9, 0.5, 0.6);
+        cap(1.8, 0.16, 1.08);
+        fringe(3, 0.18, 0.2);
+        blob(0, 0.14, -0.28, 0.08);
+        blob(0, -0.08, -0.34, 0.095, 0.9, 2.0, 0.9);
         break;
       case 'bun':
-        cap(0.58, 1.08, -0.3);
-        blob(0, 0.3, -0.12, 0.12);
-        blob(0, 0.14, 0.2, 0.1, 1.9, 0.5, 0.6);
+        cap(1.8, 0.17, 1.08);
+        fringe(2, 0.18, 0.21, 0.7);
+        blob(0, 0.31, -0.1, 0.12);
         break;
       case 'pigtails':
-        cap(0.6, 1.08, -0.28);
-        blob(-0.27, 0.02, -0.1, 0.1, 0.9, 1.6, 0.9);
-        blob(0.27, 0.02, -0.1, 0.1, 0.9, 1.6, 0.9);
-        blob(0, 0.14, 0.2, 0.1, 1.9, 0.5, 0.6);
+        cap(1.85, 0.16, 1.08);
+        fringe(3, 0.2, 0.2);
+        for (const sx of [-1, 1]) {
+          blob(sx * 0.28, 0.04, -0.08, 0.06);
+          blob(sx * 0.31, -0.1, -0.1, 0.09, 0.9, 1.7, 0.9);
+        }
         break;
       case 'short':
       default:
-        cap(0.56, 1.08, -0.32);
-        blob(0.05, 0.15, 0.2, 0.11, 1.8, 0.55, 0.6);
+        cap(1.75, 0.165, 1.08);
+        // side-swept fringe
+        blob(0.06, 0.205, 0.215, 0.085, 1.6, 0.6, 0.55, -0.25);
+        blob(-0.1, 0.215, 0.2, 0.07, 1.1, 0.6, 0.55, 0.3);
         break;
     }
   }
@@ -685,6 +684,27 @@ export class Character {
         this.body.rotation.x = 0.45 + s * 0.15;
         rArm.shoulder.rotation.x = -0.8 + s * 0.4;
         lArm.shoulder.rotation.x = -0.8 + s * 0.4;
+      } else if (this.action === 'pickup') {
+        // crouch, reach down, scoop the item up
+        const b = Math.sin(t * Math.PI);
+        this.body.rotation.x = 0.55 * b;
+        rArm.shoulder.rotation.x = -1.5 * b;
+        lArm.shoulder.rotation.x = -1.2 * b;
+        rArm.elbow.rotation.x = -0.25 * b;
+        for (const l of this.legs) {
+          l.hip.rotation.x = -0.45 * b;
+          l.knee.rotation.x = 0.8 * b;
+        }
+        bob = -0.16 * b;
+      } else if (this.action === 'holdup') {
+        // proudly hold something above the head
+        const up = Math.min(1, this.actionT / 0.25) * Math.min(1, (this.actionDur - this.actionT) / 0.25 + 0.001);
+        for (const a of this.arms) {
+          a.shoulder.rotation.x = -2.85 * up;
+          a.shoulder.rotation.z = a.side * -0.28 * up;
+          a.elbow.rotation.x = -0.25 * up;
+        }
+        bob = Math.abs(Math.sin(this.actionT * 7)) * 0.04;
       } else if (this.action === 'jump') {
         // handled by grounded flag
       }
@@ -696,9 +716,15 @@ export class Character {
     }
 
     this.body.position.y = bob;
-    // blink
-    const blink = (this.phase % 7.3) < 0.12 ? 0.1 : 1;
-    for (const e of this.eyes) e.scale.y = (this.look.gender === 'f' ? 1.25 : 1.05) * blink;
+    // blink by swapping the painted face for a closed-eyes version
+    this.blinkT -= dt;
+    const closed = this.blinkT < 0.12;
+    if (this.blinkT <= 0) this.blinkT = 2.5 + Math.random() * 4;
+    const face = closed ? this.faceClosed : this.faceOpen;
+    if (this.headMat.map !== face) {
+      this.headMat.map = face;
+      this.headMat.emissiveMap = face;
+    }
 
     // hit flash
     if (this.flash > 0) {
@@ -720,4 +746,146 @@ export class Character {
     this.root.parent?.remove(this.root);
     for (const m of this.materials) m.dispose();
   }
+}
+
+const faceCache = new Map();
+/**
+ * Paints an anime-style face onto an equirectangular texture for the head
+ * sphere. The face centre sits at u = 0.25 (the sphere's +z side).
+ */
+export function faceTexture({ skin, eyes, brow, fem }, closed) {
+  const key = `${skin}|${eyes}|${brow}|${fem}|${closed}`;
+  if (faceCache.has(key)) return faceCache.get(key);
+  const W = 1024;
+  const H = 512;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = skin;
+  ctx.fillRect(0, 0, W, H);
+  const k = W / 512; // features were designed on a 512-wide map
+  const cx = 128 * k;
+  const ink = '#2a2534';
+  const browCol = shadeHex(brow, 0.8);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // soft cheek blush
+  for (const sx of [-1, 1]) {
+    const g = ctx.createRadialGradient(cx + sx * 50 * k, 150 * k, 0, cx + sx * 50 * k, 150 * k, 16 * k);
+    g.addColorStop(0, 'rgba(240,120,120,0.55)');
+    g.addColorStop(1, 'rgba(240,120,120,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(cx + sx * 50 * k, 150 * k, 18 * k, 11 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const ex = 30 * k; // eye offset from centre
+  const ey = 126 * k;
+  const ew = 11.5 * k;
+  const eh = (fem ? 15 : 13.5) * k;
+  for (const sx of [-1, 1]) {
+    const x = cx + sx * ex;
+    if (closed) {
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 3.4 * k;
+      ctx.beginPath();
+      ctx.moveTo(x - ew * 1.05, ey + 2 * k);
+      ctx.quadraticCurveTo(x, ey + 9 * k, x + ew * 1.05, ey + 2 * k);
+      ctx.stroke();
+    } else {
+      // white
+      ctx.fillStyle = '#fffdf6';
+      ctx.beginPath();
+      ctx.ellipse(x, ey, ew, eh, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // iris with a darker top band
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(x, ey, ew, eh, 0, 0, Math.PI * 2);
+      ctx.clip();
+      const ig = ctx.createLinearGradient(0, ey - eh, 0, ey + eh);
+      ig.addColorStop(0, shadeHex(eyes, 0.55));
+      ig.addColorStop(0.6, eyes);
+      ig.addColorStop(1, shadeHex(eyes, 1.5));
+      ctx.fillStyle = ig;
+      ctx.beginPath();
+      ctx.ellipse(x + sx * 0.5 * k, ey + 2 * k, ew * 0.82, eh * 0.86, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = ink;
+      ctx.beginPath();
+      ctx.ellipse(x + sx * 0.5 * k, ey + 2.5 * k, ew * 0.38, eh * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      // sparkles
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(x - 3.5 * k, ey - 4.5 * k, 3.6 * k, 4.4 * k, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + 4 * k, ey + 6 * k, 1.8 * k, 0, Math.PI * 2);
+      ctx.fill();
+      // outline + heavy upper lash line
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1.6 * k;
+      ctx.beginPath();
+      ctx.ellipse(x, ey, ew, eh, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 4.2 * k;
+      ctx.beginPath();
+      ctx.ellipse(x, ey + 1 * k, ew + 1.5 * k, eh + 1 * k, 0, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
+      if (fem) {
+        // little outer lash flick
+        ctx.lineWidth = 3 * k;
+        ctx.beginPath();
+        ctx.moveTo(x + sx * (ew + 1 * k), ey - eh * 0.45);
+        ctx.lineTo(x + sx * (ew + 6 * k), ey - eh * 0.85);
+        ctx.stroke();
+      }
+    }
+    // eyebrows
+    ctx.strokeStyle = browCol;
+    ctx.lineWidth = (fem ? 3.2 : 4.6) * k;
+    ctx.beginPath();
+    ctx.moveTo(x - sx * 9 * k, 101 * k);
+    ctx.quadraticCurveTo(x + sx * 2 * k, 95 * k, x + sx * 12 * k, 100 * k);
+    ctx.stroke();
+  }
+  // nose: a small soft shadow
+  ctx.strokeStyle = shadeHex(skin, 0.72);
+  ctx.lineWidth = 2.4 * k;
+  ctx.beginPath();
+  ctx.moveTo(cx - 2 * k, 141 * k);
+  ctx.quadraticCurveTo(cx + 2 * k, 145 * k, cx + 3.5 * k, 142 * k);
+  ctx.stroke();
+  // mouth: open smile
+  ctx.fillStyle = '#9a3a3a';
+  ctx.beginPath();
+  ctx.moveTo(cx - 9 * k, 157 * k);
+  ctx.quadraticCurveTo(cx, 168 * k, cx + 9 * k, 157 * k);
+  ctx.quadraticCurveTo(cx, 160 * k, cx - 9 * k, 157 * k);
+  ctx.fill();
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2.2 * k;
+  ctx.beginPath();
+  ctx.moveTo(cx - 10 * k, 156.5 * k);
+  ctx.quadraticCurveTo(cx, 168 * k, cx + 10 * k, 156.5 * k);
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  faceCache.set(key, tex);
+  return tex;
+}
+
+function shadeHex(hex, f) {
+  const col = new THREE.Color(hex);
+  col.r = Math.min(1, col.r * f);
+  col.g = Math.min(1, col.g * f);
+  col.b = Math.min(1, col.b * f);
+  return `#${col.getHexString()}`;
 }

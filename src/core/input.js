@@ -50,6 +50,7 @@ export class Input {
       canvas.setPointerCapture?.(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') this.hover = { x: e.clientX, y: e.clientY, t: performance.now() };
       if (e.pointerId !== this.mouse.id || !this.mouse.down) return;
       const dx = e.clientX - this.mouse.lastX;
       const dy = e.clientY - this.mouse.lastY;
@@ -67,7 +68,12 @@ export class Input {
     });
     const up = (e) => {
       if (e.pointerId !== this.mouse.id) return;
-      if (!this.mouse.dragging) this.mouse.clicked = true;
+      if (!this.mouse.dragging) {
+        this.mouse.clicked = true;
+        this.mouse.lastX = e.clientX;
+        this.mouse.lastY = e.clientY;
+        if (e.pointerType === 'mouse') this.hover = { x: e.clientX, y: e.clientY, t: performance.now() };
+      }
       this.mouse.down = false;
       this.mouse.dragging = false;
       this.mouse.id = null;
@@ -75,6 +81,7 @@ export class Input {
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('pointerleave', () => (this.hover = null));
     canvas.addEventListener(
       'wheel',
       (e) => {

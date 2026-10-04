@@ -31,7 +31,172 @@ export class UI {
     this.hud = new Hud(this);
     this._v = new THREE.Vector3();
     this.bannerQueue = [];
+    this.tipEl = el('div', { class: 'tooltip hidden', role: 'tooltip' });
+    this.root.append(this.tipEl);
+    this.initTooltips();
     this.applySettings();
+  }
+
+  // ── tooltips ───────────────────────────────────
+  initTooltips() {
+    const DELAY = 650;
+    const show = (target) => {
+      const title = target.getAttribute('data-tip-title') || '';
+      const desc = target.getAttribute('data-tip') || '';
+      if (!title && !desc) return;
+      const r = target.getBoundingClientRect();
+      this.showTip(title, desc, r.left + r.width / 2, r.top, r.bottom);
+    };
+    const onOver = (e) => {
+      const t = e.target.closest?.('[data-tip], [data-tip-title]');
+      if (t === this._tipFor) return;
+      this.hideTip();
+      this._tipFor = t;
+      if (t) this._tipTimer = setTimeout(() => show(t), DELAY);
+    };
+    document.addEventListener('pointerover', onOver);
+    document.addEventListener('focusin', onOver);
+    document.addEventListener('pointerdown', () => this.hideTip(true));
+    document.addEventListener('scroll', () => this.hideTip(true), true);
+  }
+  showTip(title, desc, x, top, bottom = top) {
+    const t = this.tipEl;
+    t.innerHTML = `${title ? `<b>${escapeHtml(title)}</b>` : ''}${desc ? `<span>${escapeHtml(desc)}</span>` : ''}`;
+    t.classList.remove('hidden');
+    const w = t.offsetWidth;
+    const h = t.offsetHeight;
+    let left = Math.min(Math.max(8, x - w / 2), window.innerWidth - w - 8);
+    let y = top - h - 10;
+    if (y < 8) y = bottom + 10;
+    t.style.transform = `translate(${left}px, ${y}px)`;
+  }
+  hideTip(forget = false) {
+    clearTimeout(this._tipTimer);
+    this.tipEl.classList.add('hidden');
+    if (forget) this._tipFor = null;
+    this._worldTip = null;
+  }
+  /** Hovering (after a moment) or clicking/tapping (instantly) things in the 3D world. */
+  updateWorldTip(dt) {
+    const g = this.game;
+    const input = g.input;
+    const active = g.mode === 'play' && !g.isPaused();
+    if (!active) {
+      if (this._worldTip) this.hideTip(true);
+      return;
+    }
+    // click / tap: show the name right away
+    if (input.mouse.clicked) {
+      const at = { x: input.mouse.lastX, y: input.mouse.lastY };
+      const thing = this.pickWorldThing(at, 60) || this.groundThing(at);
+      if (thing) {
+        this.showWorldTip(thing, at);
+        this._pinnedUntil = performance.now() + 3500;
+        this._pinAt = at;
+      }
+      return;
+    }
+    if (this._pinnedUntil) {
+      const m = input.hover;
+      const moved = m && this._pinAt && Math.hypot(m.x - this._pinAt.x, m.y - this._pinAt.y) > 70;
+      if (performance.now() < this._pinnedUntil && !moved) return;
+      this._pinnedUntil = 0;
+      this.hideTip(true);
+    }
+    const m = input.hover;
+    if (!m || input.mouse.down || input.isTouch) {
+      if (this._worldTip) this.hideTip(true);
+      return;
+    }
+    this._wtT = (this._wtT || 0) - dt;
+    if (this._wtT > 0) return;
+    this._wtT = 0.1;
+    const best = this.pickWorldThing(m, 46) || this.groundThing(m);
+    if (!best) {
+      if (this._worldTip) this.hideTip(true);
+      this._hoverThing = null;
+      return;
+    }
+    if (best.key !== this._hoverThing?.key) {
+      this._hoverThing = best;
+      this._hoverSince = performance.now();
+      if (this._worldTip) this.hideTip(true);
+      return;
+    }
+    this._hoverThing = best;
+    if (!this._worldTip && performance.now() - this._hoverSince > 550) this.showWorldTip(best, m);
+  }
+
+  pickWorldThing(at, radius) {
+    const g = this.game;
+    const things = g.world?.hoverables() || [];
+    let best = null;
+    let bd = radius;
+    const v = new THREE.Vector3();
+    for (const th of things) {
+      v.copy(th.pos);
+      v.y += th.h ?? 1;
+      if (v.distanceTo(g.camera.position) > 50) continue;
+      const sp = this.project(v);
+      if (!sp) continue;
+      // things further away need a closer aim
+      const d = Math.hypot(sp.x - at.x, sp.y - at.y) * (th.key?.def || th.key?.boss !== undefined ? 0.8 : 1);
+      if (d < bd) {
+        bd = d;
+        best = th;
+      }
+    }
+    return best;
+  }
+
+  /** Sea or beach under the cursor, when nothing else is there. */
+  groundThing(at) {
+    const g = this.game;
+    const w = g.world;
+    if (!w) return null;
+    const ndc = new THREE.Vector2((at.x / window.innerWidth) * 2 - 1, -(at.y / window.innerHeight) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, g.camera);
+    const o = ray.ray.origin;
+    const d = ray.ray.direction;
+    // march along the ray until we hit the terrain or the water surface
+    for (let t = 1; t < 120; t += 0.5) {
+      const x = o.x + d.x * t;
+      const y = o.y + d.y * t;
+      const z = o.z + d.z * t;
+      const h = w.heightAt(x, z);
+      if (y <= Math.max(h, 0)) {
+        const key = h < -0.25 ? 'sea' : h < 1.1 ? 'sand' : null;
+        if (!key) return null;
+        return {
+          key,
+          pos: new THREE.Vector3(x, Math.max(h, 0), z),
+          tip: key === 'sea'
+            ? { title: 'Sea', desc: g.state?.rod ? 'Face the water and press E to cast your line.\nRarer fish bite at night and in the rain.' : 'Fish live here! Old Ross at the Palmora dock gives you a free rod.' }
+            : { title: 'Sandy beach', desc: 'Shells, starfish and driftwood wash up on the sand every day.\nWalk over them to collect.' },
+        };
+      }
+    }
+    return null;
+  }
+
+  showWorldTip(thing, at) {
+    const g = this.game;
+    let tip = typeof thing.tip === 'function' ? thing.tip() : thing.tip;
+    if (!tip) return;
+    // point out when this thing matters for the current quest
+    const t = g.ui.hud.target;
+    const k = thing.key;
+    const isTarget = t && ((t.follow && k?.root === t.follow) || t.pos === thing.pos || t.pos === k?.pos);
+    const objective = g.quests?.tracker()[0];
+    if (isTarget && objective) tip = { ...tip, desc: `${tip.desc}\n★ Quest: ${objective.text}` };
+    else if (k?.def && g.state) {
+      const q = g.quests;
+      if (q.talkLines(k.id).length) tip = { ...tip, desc: `${tip.desc}\n★ Has something to tell you for your quest!` };
+      else if (q.offers(k.id).length) tip = { ...tip, desc: `${tip.desc}\n❔ Has a request for you.` };
+    }
+    this.showTip(tip.title, tip.desc, at.x, at.y - 14, at.y + 20);
+    this._worldTip = thing;
   }
 
   applySettings() {
@@ -380,6 +545,7 @@ export class UI {
   }
   update(dt) {
     this.updateLabels();
+    this.updateWorldTip(dt);
     if (this._hudDirty) {
       this._hudDirty = false;
       this.hud.render();

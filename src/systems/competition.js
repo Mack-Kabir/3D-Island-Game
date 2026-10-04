@@ -9,9 +9,9 @@ export const LEAGUES = [
 ];
 
 const RIVALS = [
-  { name: 'Reel Rita', look: { gender: 'f', skin: 2, hair: 'ponytail', hairColor: 5, top: 'sailor', bottom: 'shorts_denim', hat: 'cap_red', shoes: '#3a3040' } },
-  { name: 'Gill Bates', look: { gender: 'm', skin: 0, hair: 'short', hairColor: 3, top: 'explorer', bottom: 'pants_cargo', hat: 'straw_hat', acc: 'sunglasses', shoes: '#5a3825' } },
-  { name: 'Captain Hookline', look: { gender: 'm', skin: 4, hair: 'buzz', hairColor: 8, top: 'captain_coat', bottom: 'pants_white', hat: 'captain_hat', shoes: '#2a2534' } },
+  { name: 'Rachel', look: { gender: 'f', skin: 2, hair: 'ponytail', hairColor: 5, top: 'sailor', bottom: 'shorts_denim', hat: 'cap_red', shoes: '#3a3040' } },
+  { name: 'Gary', look: { gender: 'm', skin: 0, hair: 'short', hairColor: 3, top: 'explorer', bottom: 'pants_cargo', hat: 'straw_hat', acc: 'sunglasses', shoes: '#5a3825' } },
+  { name: 'Chad', look: { gender: 'm', skin: 4, hair: 'buzz', hairColor: 8, top: 'captain_coat', bottom: 'pants_white', hat: 'captain_hat', shoes: '#2a2534' } },
 ];
 
 const DURATION = 180;

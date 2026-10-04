@@ -5,6 +5,7 @@ import { ITEMS } from '../data/items.js';
 import { inked } from '../world/toon.js';
 import { rand, clamp, lerp, el } from '../core/utils.js';
 import { fishSVG, rarityBadge } from '../ui/icons.js';
+import { fishMesh } from '../world/fx.js';
 
 export function rollFish({ island, night, rain, luck }) {
   const cands = FISH.filter(
@@ -93,7 +94,7 @@ export class FishingSystem {
     const g = this.game;
     const s = g.state;
     if (!s.rod) {
-      g.ui.toast('You need a fishing rod. Visit Old Finn at the Palmora dock!', 'warn');
+      g.ui.toast('You need a fishing rod. Visit Old Ross at the Palmora dock!', 'warn');
       return;
     }
     const spot = this.spotAhead();
@@ -110,7 +111,7 @@ export class FishingSystem {
         this.baitUsed = any;
       }
     }
-    if (!this.baitUsed) g.ui.toast('No bait — fish bite slower. Buy worms from Finn!', 'info');
+    if (!this.baitUsed) g.ui.toast('No bait — fish bite slower. Buy worms from Ross!', 'info');
     this.active = true;
     this.phase = 'cast';
     this.t = 0;
@@ -134,6 +135,7 @@ export class FishingSystem {
 
   cleanup() {
     const p = this.game.player;
+    this.pendingResult = null;
     this.active = false;
     this.phase = null;
     this.bobber.visible = false;
@@ -225,12 +227,16 @@ export class FishingSystem {
         if (Math.random() < dt * 6) g.particles.burst(this.bobber.position, { count: 2, color: '#e8fbff', speed: 1, up: 1.5, life: 0.4 });
         break;
       case 'result':
-        if (this.t > 0.4 && (input.anyPressed('KeyE', 'Space', 'Enter', 'Escape') || input.mouse.clicked)) {
+        if (this.pendingResult && this.t > 1.0) {
+          this.showResult(...this.pendingResult);
+          this.pendingResult = null;
+        }
+        if (!this.pendingResult && this.t > 1.3 && (input.anyPressed('KeyE', 'Space', 'Enter', 'Escape') || input.mouse.clicked)) {
           this.cleanup();
         }
         break;
     }
-    this.updateLine(tip);
+    if (this.phase !== 'result') this.updateLine(tip);
   }
 
   updateLine(tip) {
@@ -337,9 +343,17 @@ export class FishingSystem {
     this.removeUI();
     this.phase = 'result';
     this.t = 0;
+    // the fish leaps out of the water into the player's raised hands
+    const from = this.bobber.position.clone();
     this.bobber.visible = false;
     this.line.visible = false;
-    g.player.pose = 'cheer';
+    g.player.pose = null;
+    g.player.char.hold(null);
+    const fm = fishMesh(f);
+    fm.scale.setScalar(Math.min(1.6, 0.9 + Math.log10(1 + weight) * 0.35));
+    g.fx.holdUp(fm, 1.5, from);
+    g.particles.burst(from, { count: 16, color: '#e8fbff', speed: 2, up: 4, life: 0.7 });
+    g.audio.sfx('splash');
     const res = g.recordCatch(f, weight, { perfect });
     if (chest) {
       const r = Math.random();
@@ -347,7 +361,7 @@ export class FishingSystem {
       else if (r < 0.8) g.give({ gems: 1 + Math.floor(Math.random() * 3) });
       else g.give({ items: { bottle: 1 } });
     }
-    this.showResult(f, weight, res, perfect, chest);
+    this.pendingResult = [f, weight, res, perfect, chest];
   }
 
   // ── UI pieces ─────────────────────────────────

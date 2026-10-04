@@ -18,7 +18,7 @@ export const FISH = [
   // ── Junk ─────────────────────────────────────────────
   { id: 'old_boot', name: 'Old Boot', tier: 'junk', where: ['*'], time: 'any', weather: 'any', price: 2, w: [0.4, 1.1], diff: 1, colors: ['#6b4f3a', '#4d382a', '#2e2219'], shape: 'boot', desc: 'Someone lost their footing.' },
   { id: 'tin_can', name: 'Rusty Can', tier: 'junk', where: ['*'], time: 'any', weather: 'any', price: 1, w: [0.1, 0.3], diff: 1, colors: ['#9aa3a8', '#c2672f', '#6c7479'], shape: 'can', desc: 'Recycle me, please.' },
-  { id: 'seaweed', name: 'Tangled Seaweed', tier: 'junk', where: ['*'], time: 'any', weather: 'any', price: 3, w: [0.2, 0.6], diff: 1, colors: ['#4f8a4a', '#3b6e3a', '#6faa5c'], shape: 'weed', desc: 'Slimy. Nana Leia might want it.' },
+  { id: 'seaweed', name: 'Tangled Seaweed', tier: 'junk', where: ['*'], time: 'any', weather: 'any', price: 3, w: [0.2, 0.6], diff: 1, colors: ['#4f8a4a', '#3b6e3a', '#6faa5c'], shape: 'weed', desc: 'Slimy. Grandma Rose might want it.' },
 
   // ── Common ───────────────────────────────────────────
   { id: 'sardine', name: 'Sunny Sardine', tier: 'common', where: ['*'], time: 'any', weather: 'any', price: 10, w: [0.1, 0.3], diff: 1.5, colors: ['#9bb7c9', '#eef3f2', '#6c8ca3'], shape: 'slim', desc: 'Swims in shimmering schools.' },

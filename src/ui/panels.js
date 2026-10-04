@@ -8,7 +8,7 @@ import { QUESTS } from '../data/quests.js';
 import { NPCS } from '../data/npcs.js';
 import { ISLANDS, ISLAND_ORDER } from '../data/islands.js';
 import { LEAGUES } from '../systems/competition.js';
-import { itemIconHTML, fishSVG, rarityBadge } from './icons.js';
+import { itemIconHTML, fishSVG, rarityBadge, itemTip, tipAttrs } from './icons.js';
 
 const h = el;
 const btn = (text, onclick, cls = '', disabled = false, attrs = {}) => h('button', { class: `btn ${cls}`, onclick, disabled, ...attrs, html: text });
@@ -159,7 +159,7 @@ export const PANELS = {
           if (tab === 'pet') return petsTab(ui);
           return cosmeticGrid(ui, tab);
         },
-        footer: h('p', { class: 'muted small', text: 'Drag the scene to spin around. New clothes are sold at Luna\'s Boutique and by Moth at night.' }),
+        footer: h('p', { class: 'muted small', text: 'Drag the scene to spin around. New clothes are sold at Lily\'s Boutique and by Madison at night.' }),
       };
     },
   },
@@ -245,7 +245,7 @@ export const PANELS = {
             });
             const can = !locked && g.canCook(r);
             wrap.append(
-              h('div', { class: `recipe ${locked ? 'locked' : ''}` }, [
+              h('div', { class: `recipe ${locked ? 'locked' : ''}`, ...tipAttrs(itemTip(r.out)) }, [
                 h('div', { class: 'recipe-out', html: itemIconHTML(r.out, 46) }),
                 h('div', { class: 'recipe-info' }, [h('b', { text: out.name }), h('div', { class: 'ings', html: parts.join('') }), h('div', { class: 'muted small', html: `Sells for 🪙 ${out.sell} · Heals ❤ ${out.heal}` })]),
                 locked ? h('span', { class: 'lock', text: `🔒 Lv ${r.level}` }) : btn('Cook', () => { g.cook(r.id); ui.refreshPanel(); }, can ? 'primary' : '', !can),
@@ -376,10 +376,18 @@ export const PANELS = {
           return h('div', { class: 'help' }, [
             section('Controls',
               h('div', { class: 'keys-grid', html: [
-                ['WASD / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump (dodges attacks!)'], ['E', 'Talk · fish · pick · plant · interact'], ['F / click', 'Attack'],
+                ['WASD / Arrows', 'Move'], ['Shift', 'Run'], ['Space', 'Jump (dodges attacks!)'], ['E', 'Talk · fish · shake trees · plant · interact'], ['F / click', 'Attack'],
                 ['Drag mouse', 'Rotate camera'], ['Wheel', 'Zoom'], ['I / Tab', 'Bag'], ['J', 'Quests'], ['M', 'Map'], ['C', 'Wardrobe'], ['Esc', 'Menu / close'],
               ].map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('') }),
             ),
+            section('Making money (start here!)', h('ol', {}, [
+              h('li', { text: 'Beachcombing: walk over shells, starfish and driftwood on the sand — they\'re free. Sell shells & starfish to Chloe at the fruit stand.' }),
+              h('li', { text: 'Fruit: stand next to a tree with coloured fruit and press E to shake it. Sell fruit to Chloe.' }),
+              h('li', { text: 'Fishing: Old Ross at the dock gives you a FREE rod (story quest). Sell fish to Megan at the fish market.' }),
+              h('li', { text: 'Cooking: at the campfire beside your home, turn 1 fish into Grilled Fish — it sells for 3× more!' }),
+              h('li', { text: 'Farming: buy seeds from Chloe, plant them at your homestead, water daily and harvest.' }),
+              h('li', { text: 'To sell: talk to a shopkeeper and pick "Sell items". Hover any item to see what it\'s worth.' }),
+            ])),
             section('Fishing', h('ol', {}, [
               h('li', { text: 'Face the water and press E to cast.' }),
               h('li', { text: 'Wait for the "!" and press E quickly to hook the fish.' }),
@@ -387,11 +395,11 @@ export const PANELS = {
               h('li', { text: 'Better rods = bigger zone + more luck. Bait speeds up bites. Some fish only appear at night, in rain or on certain islands.' }),
             ])),
             section('Island life', h('ul', {}, [
-              h('li', { text: 'Sell fish to Marina, fruit & food to Coco. Coins buy gear, boats, clothes and house upgrades.' }),
+              h('li', { text: 'Sell fish to Megan, fruit & food to Chloe. Coins buy gear, boats, clothes and house upgrades.' }),
               h('li', { text: 'Gems come from rare catches, treasure, quests, tournaments and bounties.' }),
               h('li', { text: 'Farm at your homestead: plant, water daily, harvest. Trees fruit forever.' }),
               h('li', { text: 'Cook at your campfire — food sells for more and heals you.' }),
-              h('li', { text: 'Night (7 PM – 7 AM): rare fish, Moth the night merchant… and pirate raids.' }),
+              h('li', { text: 'Night (7 PM – 7 AM): rare fish, Madison the night merchant… and pirate raids.' }),
               h('li', { text: 'Walk over shells, driftwood and stones to collect them. Dig X marks with a shovel.' }),
             ])),
           ]);
@@ -431,6 +439,7 @@ function itemsTab(ui, p) {
         class: `slot ${p.sel === id ? 'sel' : ''}`,
         style: tier ? { '--tier': tier.color } : {},
         'aria-label': `${it.name}, ${n}`,
+        ...tipAttrs(itemTip(id, n)),
         onclick: () => { p.sel = id; ui.refreshPanel(); },
         html: `${itemIconHTML(id, 44)}<span class="count">${n}</span>${tier ? `<span class="tier-dot" title="${tier.name}">${tier.icon}</span>` : ''}`,
       }),
@@ -474,7 +483,7 @@ function gearTab(ui) {
         equipped === x.id ? h('span', { class: 'tag', text: 'Equipped' }) : btn('Equip', () => { onEquip(x.id); ui.refreshPanel(); }),
       ]),
     ));
-  wrap.append(section('Fishing rods', s.rods.length ? rows(RODS, s.rods, s.rod, (id) => g.equip('rod', id), (r) => `Zone ${Math.round(r.zone * 100)}% · Luck +${Math.round(r.luck * 100)}% · Bite speed ×${(1 / r.speed).toFixed(2)}`) : empty('No rod yet — Old Finn at the Palmora dock can help.', '🎣')));
+  wrap.append(section('Fishing rods', s.rods.length ? rows(RODS, s.rods, s.rod, (id) => g.equip('rod', id), (r) => `Zone ${Math.round(r.zone * 100)}% · Luck +${Math.round(r.luck * 100)}% · Bite speed ×${(1 / r.speed).toFixed(2)}`) : empty('No rod yet — Old Ross at the Palmora dock can help.', '🎣')));
   const baits = BAITS.filter((b) => (s.inventory[b.id] || 0) > 0);
   wrap.append(section('Bait', baits.length ? h('div', { class: 'gear-list' }, baits.map((b) => h('div', { class: `gear-row ${s.bait === b.id ? 'on' : ''}` }, [
     h('span', { class: 'gi', text: ITEMS[b.id].icon }),
@@ -483,7 +492,7 @@ function gearTab(ui) {
   ]))) : empty('Out of bait. Fish still bite, just slower.', '🪱')));
   wrap.append(section('Weapons', rows(WEAPONS, s.weapons, s.weapon, (id) => g.equip('weapon', id), (w) => `Damage ${w.dmg} · Reach ${w.range}`)));
   const boat = BOATS_BY_ID[s.boat];
-  wrap.append(section('Boat', h('div', { class: 'gear-row on' }, [h('span', { class: 'gi', text: boat.icon || '🏝️' }), h('div', {}, [h('b', { text: boat.name }), h('div', { class: 'muted small', text: boat.desc || 'Buy a boat from Captain Reyes to visit other islands.' })])])));
+  wrap.append(section('Boat', h('div', { class: 'gear-row on' }, [h('span', { class: 'gi', text: boat.icon || '🏝️' }), h('div', {}, [h('b', { text: boat.name }), h('div', { class: 'muted small', text: boat.desc || 'Buy a boat from Captain Jack to visit other islands.' })])])));
   return wrap;
 }
 
@@ -503,7 +512,7 @@ function fishdexTab(ui) {
       const where = f.where.includes('*') ? 'Anywhere' : f.where.map((w) => ISLANDS[w].name).join(', ');
       const when = [f.time !== 'any' ? (f.time === 'night' ? '🌙 Night' : '☀️ Day') : '', f.weather === 'rain' ? '🌧️ Rain' : ''].filter(Boolean).join(' · ');
       grid.append(
-        h('div', { class: `dex ${d ? 'found' : ''}`, style: { '--tier': TIERS[f.tier].color } }, [
+        h('div', { class: `dex ${d ? 'found' : ''}`, style: { '--tier': TIERS[f.tier].color }, 'data-tip-title': d ? f.name : 'Undiscovered fish', 'data-tip': `${d ? f.desc + '\n' : ''}Where: ${where}${when ? '\nWhen: ' + when : ''}\nWorth 🪙 ${f.price}` }, [
           h('div', { class: 'dex-img', html: d ? fishSVG(f, 70) : fishSVG({ ...f, colors: ['#5a5466', '#5a5466', '#4a4458'], stripes: false, stars: false, flames: false }, 70) }),
           h('b', { text: d ? f.name : '???' }),
           h('div', { html: rarityBadge(f.tier) }),
@@ -537,7 +546,7 @@ function questCard(g, q, st) {
     const done = i < st.step;
     const cur = i === st.step;
     const count = o.count ?? 1;
-    return h('li', { class: done ? 'done' : cur ? 'cur' : 'todo', html: `${done ? '✔' : cur ? '➜' : '○'} ${escapeHtml(o.text)}${cur && count > 1 ? ` <b>${Math.min(st.progress, count)}/${count}</b>` : ''}` });
+    return h('li', { class: done ? 'done' : cur ? 'cur' : 'todo', html: `${done ? '✔' : cur ? '➜' : '○'} ${escapeHtml(o.text)}${cur && count > 1 ? ` <b>${Math.min(st.progress, count)}/${count}</b>` : ''}${cur && o.hint ? `<div class="trk-hint">💡 ${escapeHtml(o.hint)}</div>` : ''}` });
   });
   const giver = q.giver ? NPCS[q.giver] : null;
   return h('div', { class: `qcard ${q.main ? 'main' : ''}` }, [
@@ -667,7 +676,7 @@ function seaChart(ui, travel) {
     chart.append(node);
   }
   wrap.append(chart);
-  wrap.append(h('p', { class: 'muted small center', text: travel ? 'Choose a destination. Sailing takes game time.' : 'Board your boat at any dock to sail. Captain Reyes sells boats on Palmora.' }));
+  wrap.append(h('p', { class: 'muted small center', text: travel ? 'Choose a destination. Sailing takes game time.' : 'Board your boat at any dock to sail. Captain Jack sells boats on Palmora.' }));
   return wrap;
 }
 
@@ -739,12 +748,14 @@ function cosmeticGrid(ui, slot) {
   for (const c of all) {
     const owned = s.cosmetics.includes(c.id);
     const on = look[slot] === c.id;
-    const where = c.reward ? 'Special reward' : c.gems && !c.price ? 'Moth / special shops' : 'Luna\'s Boutique';
+    const where = c.reward ? 'Special reward' : c.gems && !c.price ? 'Madison / special shops' : 'Lily\'s Boutique';
     grid.append(
       h('button', {
         class: `cos ${on ? 'on' : ''} ${owned ? '' : 'locked'}`,
         'aria-pressed': on ? 'true' : 'false',
         'aria-label': `${c.name}${owned ? '' : ', locked'}`,
+        'data-tip-title': c.name,
+        'data-tip': owned ? (on ? 'You\'re wearing this.' : 'Click to wear it.') : `Locked — ${where}${c.price ? ` for ${c.price} coins` : c.gems ? ` for ${c.gems} gems` : ''}.`,
         onclick: () => {
           if (!owned) return g.ui.toast(`${c.name}: find it at ${where}.`, 'info');
           g.setLook({ ...look, [slot]: c.id });
@@ -769,7 +780,7 @@ function petsTab(ui) {
     const owned = s.pets.includes(p.id);
     wrap.append(h('div', { class: `gear-row ${s.pet === p.id ? 'on' : ''} ${owned ? '' : 'locked'}` }, [
       h('span', { class: 'gi', text: p.icon }),
-      h('div', {}, [h('b', { text: p.name }), h('div', { class: 'muted small', text: `${p.perk}${owned ? '' : ' · Sold at Luna\'s Boutique'}` })]),
+      h('div', {}, [h('b', { text: p.name }), h('div', { class: 'muted small', text: `${p.perk}${owned ? '' : ' · Sold at Lily\'s Boutique'}` })]),
       !owned ? h('span', { class: 'lock', html: `🔒 💎 ${p.gems}` }) : s.pet === p.id ? h('span', { class: 'tag', text: 'Active' }) : btn('Choose', () => { g.equip('pet', p.id); ui.refreshPanel(); }),
     ]));
   }
@@ -827,7 +838,7 @@ function buyTab(ui, shop) {
     else if (locked) action = h('span', { class: 'lock', text: `🔒 Lv ${e.level}` });
     else action = btn('Buy', () => { g.buy(e, shop); ui.refreshPanel(); }, afford ? 'primary' : '', !afford, { 'aria-label': `Buy ${info.name}` });
     list.append(
-      h('div', { class: `shop-row ${info.owned ? 'owned' : ''} ${locked ? 'locked' : ''}` }, [
+      h('div', { class: `shop-row ${info.owned ? 'owned' : ''} ${locked ? 'locked' : ''}`, 'data-tip-title': info.name, 'data-tip': `${info.desc}${locked ? `\nUnlocks at level ${e.level}.` : ''}${info.owned ? '\nYou already own this.' : ''}` }, [
         h('div', { class: 'shop-icon', html: info.html || (info.swatch ? `<span class="cos-sw" style="background:${info.swatch}">${info.pattern ? `<i class="pat ${info.pattern[0]}" style="--a:${info.pattern[1]}"></i>` : ''}</span>` : `<span class="emoji">${info.icon}</span>`) }),
         h('div', { class: 'shop-info' }, [h('b', { text: info.name }), h('div', { class: 'muted small', text: info.desc })]),
         h('div', { class: 'shop-price', html: price(coins, gems) }),
@@ -856,7 +867,7 @@ function sellTab(ui, shop) {
     const it = ITEMS[id];
     const each = Math.floor(it.sell * bonus);
     list.append(
-      h('div', { class: 'shop-row' }, [
+      h('div', { class: 'shop-row', ...tipAttrs(itemTip(id, n)) }, [
         h('div', { class: 'shop-icon', html: itemIconHTML(id, 40) }),
         h('div', { class: 'shop-info' }, [h('b', { text: `${it.name} ×${n}` }), it.type === 'fish' ? h('div', { html: rarityBadge(it.tier) }) : h('div', { class: 'muted small', text: TYPE_LABEL[it.type] })]),
         h('div', { class: 'shop-price', html: `🪙 ${each} each` }),
@@ -895,7 +906,7 @@ function upgradeTab(ui) {
       h('p', { class: 'muted', text: `${next.desc} Unlocks ${next.plots} farm plots.` }),
       h('ul', { class: 'reqs' }, reqs.map(([l, have, need, txt]) => h('li', { class: have >= need ? 'ok' : 'no', html: `${have >= need ? '✔' : '✖'} ${l}: <b>${txt}</b> <small>(have ${formatNum(have)})</small>` }))),
       btn('🔨 Build it!', () => { if (g.home.upgrade()) ui.refreshPanel(); }, 'primary big', !g.home.canUpgrade().ok),
-      h('p', { class: 'muted small', text: 'Driftwood & stones wash up on beaches daily — or buy them from Bo.' }),
+      h('p', { class: 'muted small', text: 'Driftwood & stones wash up on beaches daily — or buy them from Bob.' }),
     ]),
   );
   return wrap;
@@ -907,7 +918,7 @@ function decorTab(ui) {
   const owned = sortedInventory(s, (it) => it.type === 'decor');
   const wrap = h('div', {});
   wrap.append(h('p', { class: 'muted', text: `Placed decorations: ${s.house.decor.length}. Walk up to a placed item and press E to pick it back up.` }));
-  if (!owned.length) wrap.append(empty('No decorations in your bag. Bo sells them on Palmora.', '🌺'));
+  if (!owned.length) wrap.append(empty('No decorations in your bag. Bob sells them on Palmora.', '🌺'));
   const list = h('div', { class: 'shop-list' });
   for (const [id, n] of owned) {
     list.append(h('div', { class: 'shop-row' }, [h('div', { class: 'shop-icon', html: itemIconHTML(id, 40) }), h('div', { class: 'shop-info' }, [h('b', { text: `${ITEMS[id].name} ×${n}` })]), btn('Place', () => g.home.startPlacing(ITEMS[id].decor), 'primary')]));

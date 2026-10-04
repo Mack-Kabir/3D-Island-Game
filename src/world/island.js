@@ -6,6 +6,18 @@ import { mulberry32, smoothstep, hashString, clamp } from '../core/utils.js';
 import { NPCS } from '../data/npcs.js';
 import { NPC, crabModel, gullModel } from '../entities/actors.js';
 import { ITEMS } from '../data/items.js';
+import { itemTip } from '../ui/icons.js';
+import { SHOPS } from '../data/shops.js';
+import { BOATS } from '../data/gear.js';
+
+const PROP_TIPS = {
+  palm: { title: 'Palm tree', desc: 'A tall, shady palm.\nPalms with brown coconuts can be shaken for coconuts (press E).' },
+  tree: { title: 'Island tree', desc: 'Just a lovely tree.\nTrees with coloured fruit on them can be shaken for fruit.' },
+  pine: { title: 'Pine tree', desc: 'Pines grow on the cooler hillsides.' },
+  bush: { title: 'Bush', desc: 'A leafy bush. Nothing to pick here.' },
+  flowers: { title: 'Flowering bush', desc: 'Pretty! Flower pots for your home are sold by Bob.' },
+  rock: { title: 'Boulder', desc: 'A big rock.\nSmall stones for building often lie next to big rocks — walk over them to collect.' },
+};
 
 const PICKUP_TYPES = {
   palmora: [['shell', 5], ['starfish', 2], ['driftwood', 4], ['bottle', 0.4]],
@@ -38,6 +50,7 @@ export class IslandWorld {
     this.glowPoints = [];
     this.occupied = [];
     this.critters = [];
+    this.props = []; // decorative things that only show a tooltip
     this.dynamic = new THREE.Group();
     this.group.add(this.dynamic);
     this.rnd = mulberry32(def.seed);
@@ -94,6 +107,49 @@ export class IslandWorld {
     this.colliders.push({ type: 'circle', x, z, r, tree });
     this.occupy(x, z, r + 0.5);
   }
+  sign(text, res, opts) {
+    if (!res?.signPos) return;
+    this.group.add(P.signBoard(text, res.signPos, res.rot ?? 0, opts));
+  }
+  landmark(x, z, title, desc, h = 3) {
+    this.landmarks = this.landmarks || [];
+    this.landmarks.push({ pos: new THREE.Vector3(x, this.heightAt(x, z), z), h, tip: { title, desc } });
+  }
+  /** Everything that shows a tooltip when the mouse rests on it. */
+  hoverables() {
+    const out = [];
+    for (const n of this.npcs) {
+      if (!n.available()) continue;
+      const d = n.def;
+      const shop = d.shop ? SHOPS[d.shop] : null;
+      out.push({
+        key: n,
+        pos: n.pos,
+        h: 1.7,
+        tip: () => ({
+          title: d.name,
+          desc: [d.title, shop ? `Runs ${shop.name}.${shop.sells.length ? ' Buys your items.' : ''}` : '', 'Walk up and press E to talk.'].filter(Boolean).join('\n'),
+        }),
+      });
+    }
+    for (const pk of this.pickups) out.push({ key: pk, pos: pk.pos, h: 0.3, tip: () => ({ ...itemTip(pk.id), desc: `${itemTip(pk.id).desc}\nWalk over it to pick it up.` }) });
+    for (const e of this.enemies) if (!e.dead) out.push({ key: e, pos: e.pos, h: 1.6, tip: () => ({ title: e.boss ? 'Captain Blackfin' : 'Pirate', desc: `Health ${Math.max(0, e.hp)}/${e.maxHp}\nPress F to attack. Jump (Space) when you see a red "!"` }) });
+    for (const it of this.interactables) {
+      if (it.npc || !it.enabled()) continue;
+      out.push({ key: it, pos: it.pos, h: it.tipH ?? 1, tip: it.tip || (() => ({ title: it.label(), desc: 'Walk up and press E.' })) });
+    }
+    for (const l of this.landmarks || []) out.push({ ...l, key: l });
+    for (const pr of this.props) out.push({ ...pr, key: pr });
+    if (this.boatGroup && this.game.boatTier() > 0) {
+      const boat = BOATS[this.game.boatTier()];
+      out.push({ key: this.boatGroup, pos: this.boatAnchor, h: 1.2, tip: { title: `Your boat — ${boat.name}`, desc: `Used to sail to other islands. ${boat.desc}\nWalk along the dock next to it and press E.` } });
+    } else if (this.dock && this.boatAnchor) {
+      out.push({ key: 'mooring', pos: this.boatAnchor, h: 0.5, tip: { title: 'Empty mooring', desc: 'Your boat will be tied up here.\nBoats are sold by Captain Jack on Palmora — they let you sail to other islands.' } });
+    }
+    if (this.dock) out.push({ key: 'dock', pos: this.dock.start.clone().addScaledVector(this.dock.dir, 6), h: 0.4, tip: { title: 'Dock', desc: 'The best fishing spot: walk to the end, face the water and press E.\nYour boat is moored here too.' } });
+    return out;
+  }
+
   interact(def) {
     const it = { r: 2.2, priority: 0, enabled: () => true, ...def };
     this.interactables.push(it);
@@ -175,24 +231,29 @@ export class IslandWorld {
       const s = 0.85 + r() * 0.45;
       P.palm(b, x, h - 0.1, z, s, r, n.palmPal);
       this.circle(x, z, 0.4 * s, true);
+      this.props.push({ pos: new THREE.Vector3(x, h, z), h: 3.5 * s, tip: PROP_TIPS.palm });
     }, 1.6);
     place(n.trees ?? 25, (h, x, z) => h > 1.6 && h < 9 && this.slope(x, z) < 0.18, (x, h, z) => {
       const s = 0.8 + r() * 0.5;
       P.roundTree(b, x, h - 0.1, z, s, r, { leaf: r() < 0.5 ? pal.grass2 : n.leaf ?? '#5f9a5c' });
       this.circle(x, z, 0.45 * s, true);
+      this.props.push({ pos: new THREE.Vector3(x, h, z), h: 2.6 * s, tip: PROP_TIPS.tree });
     }, 2.4);
     place(n.pines ?? 12, (h, x, z) => h > 4 && this.slope(x, z) < 0.3, (x, h, z) => {
       const s = 0.8 + r() * 0.6;
       P.pine(b, x, h - 0.1, z, s, r, { leaf: n.pineLeaf });
       this.circle(x, z, 0.4 * s, true);
+      this.props.push({ pos: new THREE.Vector3(x, h, z), h: 2.5 * s, tip: PROP_TIPS.pine });
     }, 1.8);
     place(n.bushes ?? 50, (h) => h > 1.3 && h < 10, (x, h, z) => {
       const flowers = r() < 0.4 ? ['#f2a2b8', '#ffffff', '#f7c95c', '#e86f8a'][Math.floor(r() * 4)] : null;
       P.bush(b, x, h - 0.05, z, 0.7 + r() * 0.6, r, r() < 0.5 ? pal.grass2 : '#6aa36a', flowers);
+      this.props.push({ pos: new THREE.Vector3(x, h, z), h: 0.5, tip: flowers ? PROP_TIPS.flowers : PROP_TIPS.bush });
     }, 1.0);
     place(n.rocks ?? 30, (h) => h > -1.5 && h < 14, (x, h, z) => {
       const s = 0.6 + r() * 1.3;
       P.rock(b, x, h - 0.2, z, s, r, n.rockColor ?? pal.rock);
+      this.props.push({ pos: new THREE.Vector3(x, h, z), h: 0.5 * s, tip: PROP_TIPS.rock });
       if (s > 0.9) this.circle(x, z, 0.85 * s);
       this.stoneSpots = this.stoneSpots || [];
       this.stoneSpots.push(new THREE.Vector3(x, h, z));
@@ -214,6 +275,8 @@ export class IslandWorld {
           r: 2.6,
           icon: ITEMS[fruit].icon,
           label: () => (this.game.home.treeReady(this.id, tree.idx) ? `Shake ${ITEMS[fruit].name} tree` : `${ITEMS[fruit].name} tree (regrowing)`),
+          tipH: 3,
+          tip: () => ({ title: `${ITEMS[fruit].name} tree`, desc: `${this.game.home.treeReady(this.id, tree.idx) ? 'Ready! Stand next to it and press E to shake down fruit.' : 'No fruit right now — it regrows 12 hours after shaking.'}\nSell fruit to Chloe or cook with it.` }),
           action: () => this.game.home.shakeTree(this, tree),
         });
       }, 2.5);
@@ -296,12 +359,18 @@ export class IslandWorld {
       this.dynamic.add(npc.root);
       this.interact({
         pos: npc.root.position,
-        r: 2.6,
+        r: spot.reach ?? 3.0, // shopkeepers behind counters get a longer reach
         priority: 3,
         npc,
         icon: '💬',
         enabled: () => npc.available(),
-        label: () => `Talk to ${def.name}`,
+        label: () => {
+          const q = this.game.quests;
+          if (!this.game.state) return `Talk to ${def.name}`;
+          if (q.talkLines(def.id).length || q.canTurnIn(def.id).length) return `Talk to ${def.name} ★ quest`;
+          if (q.offers(def.id).length) return `Talk to ${def.name} ❔ has a request`;
+          return `Talk to ${def.name}`;
+        },
         action: () => this.game.dialogue.open(npc),
       });
       npc.label = this.game.ui.addLabel(npc.root, { offsetY: 2.35 * (def.scale ?? 1), cls: 'npc-label', html: '', maxDist: 16 });
@@ -425,6 +494,7 @@ export class IslandWorld {
       icon: '⛏️',
       enabled: () => this.digSpots.includes(spot),
       label: () => (this.game.hasItem('shovel') ? 'Dig for treasure' : 'X marks the spot (needs a Shovel)'),
+      tip: { title: 'Buried treasure', desc: 'Something is buried here!\nStand on the X and press E to dig. Needs a Shovel (Chloe sells them).' },
       action: () => this.game.home.dig(this, spot),
     });
   }
@@ -473,9 +543,11 @@ export class IslandWorld {
       pk.mesh.rotation.y += dt * 0.8;
       if (p && g.mode === 'play' && Math.hypot(p.pos.x - pk.pos.x, p.pos.z - pk.pos.z) < 1.25 && Math.abs(p.pos.y - pk.pos.y) < 2) {
         this.pickups.splice(k, 1);
-        pk.mesh.parent?.remove(pk.mesh);
         g.worldState(this.id).taken.push(pk.i);
-        g.collectPickup(pk.id, pk.pos);
+        // the islander bends down and the item arcs up into their hand
+        const from = pk.mesh.getWorldPosition(new THREE.Vector3());
+        pk.mesh.parent?.remove(pk.mesh);
+        g.fx.collect(pk.mesh, from, { dur: 0.45, onDone: () => g.collectPickup(pk.id, g.fx.hand()) });
       }
     }
     // critters
@@ -674,7 +746,7 @@ const LAYOUTS = {
     zones(w) {
       w.flatten(0, 6, 15, 2.3, 10); // plaza
       w.flatten(-38, -6, 13, 2.6, 9); // homestead
-      w.flatten(25, 14, 6, 2.3, 6); // Bo
+      w.flatten(25, 14, 6, 2.3, 6); // Bob
       w.path(0, 6, 0, 46, 2.0);
       w.path(0, 6, -38, -6, 1.8);
       w.path(0, 6, 25, 14, 1.6);
@@ -697,24 +769,36 @@ const LAYOUTS = {
       const mayor = P.house(b, 0, h(0, -10), -10, { w: 6.5, d: 5, h: 3.4, wall: '#f4e9d0', roof: '#4f7fa8', chimney: true, rot: 0 });
       w.addCollider(mayor.collider);
       w.occupy(0, -10, 6);
+      w.sign('TOWN HALL', mayor, { bg: '#dfe9f2' });
+      w.landmark(0, -10, 'Town Hall', 'Mayor Mike\'s house. He hands out the main story quests.');
       const luna = P.house(b, -16, h(-16, 2), 2, { w: 5, d: 4.5, h: 3, wall: '#f6dbe6', roof: '#b9a3e0', rot: Math.PI / 2, awning: '#f2a2b8' });
       w.addCollider(luna.collider);
       w.occupy(-16, 2, 5);
+      w.sign("LILY'S BOUTIQUE", luna, { bg: '#f6dbe6' });
+      w.landmark(-16, 2, "Lily's Boutique", 'Clothes, hats, accessories and pets. Talk to Lily outside.');
       const nana = P.house(b, 16, h(16, 2), 2, { w: 5, d: 4.5, h: 3, wall: '#fbeccc', roof: '#d9734f', rot: -Math.PI / 2, chimney: true });
       w.addCollider(nana.collider);
       w.occupy(16, 2, 5);
+      w.sign("ROSE'S KITCHEN", nana, { bg: '#fbe2c8' });
+      w.landmark(16, 2, "Grandma Rose's Kitchen", 'Grandma Rose teaches cooking. Cooked food sells for much more!');
       const bo = P.house(b, 28, h(28, 14), 14, { w: 5.5, d: 5, h: 3.2, wall: '#e2cfa8', roof: '#7a6a5a', rot: -Math.PI / 2, roofStyle: 'thatch' });
       w.addCollider(bo.collider);
       w.occupy(28, 14, 5);
+      w.sign("BOB'S WORKSHOP", bo);
+      w.landmark(28, 14, "Bob's Workshop", 'Bob builds house upgrades and sells wood, stone and decorations.');
       for (let i = 0; i < 3; i++) P.crate(b, 24 + i * 0.9, h(24, 18), 19 - i * 0.3, 0.8, i);
       P.barrel(b, 22.5, h(22.5, 9.5), 9.5);
       w.circle(24.9, 18.6, 1.4);
-      // Coco's fruit stand
-      w.addCollider(P.stall(b, -7, h(-7, 13), 13, 0, ['#f2a2b8', '#fbf3e2'], ['#e2434b', '#e7b53a', '#f2d23a', '#3f8f3a', '#f29a2e']).collider);
+      // Chloe's fruit stand
+      const cocoStall = P.stall(b, -7, h(-7, 13), 13, 0, ['#f2a2b8', '#fbf3e2'], ['#e2434b', '#e7b53a', '#f2d23a', '#3f8f3a', '#f29a2e']);
+      w.addCollider(cocoStall.collider);
       w.occupy(-7, 13, 3);
+      w.sign('FRUIT & SEEDS', cocoStall, { bg: '#fde2ea' });
+      w.landmark(-7, 13, "Chloe's Fruit Stand", 'Sells seeds, saplings and tools.\nBuys fruit, food, shells and starfish.', 2);
       // bounty board
       w.addCollider(P.board(b, 8, h(8, 15), 15, -0.3).collider);
-      w.interact({ pos: new THREE.Vector3(8, h(8, 15), 16), r: 2.6, icon: '📋', priority: 1, label: () => 'Read the bounty board', action: () => w.game.ui.openPanel('quests', { tab: 'bounties' }) });
+      w.landmark(0, 4, 'Village Well', 'The heart of Palmora village.', 2);
+      w.interact({ pos: new THREE.Vector3(8, h(8, 15), 16), r: 2.6, icon: '📋', priority: 1, tipH: 2, tip: { title: 'Bounty Board', desc: '3 new daily jobs every morning. Finish them for coins, XP and gems.\nPress E to read it.' }, label: () => 'Read the bounty board', action: () => w.game.ui.openPanel('quests', { tab: 'bounties' }) });
       P.signpost(b, 3, h(3, 22), 22, 0.4);
 
       // homestead
@@ -725,20 +809,26 @@ const LAYOUTS = {
       P.fence(b, hx - 11, hz - 10, hx - 11, hz + 11, h);
       P.fence(b, hx - 11, hz + 11, hx - 3, hz + 11, h);
       P.signpost(b, hx + 9, h(hx + 9, hz + 12), hz + 12, -0.5);
+      w.landmark(hx + 9, hz + 12, 'Your Homestead', 'Your home, farm plots and campfire. Press E at the house or campfire.', 1.5);
 
       // dock & waterfront
       const dock = w.makeDock(b, 0, 30, 0, 1);
       const s = dock.start;
       const side = new THREE.Vector3(Math.cos(dock.rot), 0, -Math.sin(dock.rot));
       const mk = s.clone().addScaledVector(side, -5.5).addScaledVector(dock.dir, -3);
-      w.addCollider(P.stall(b, mk.x, h(mk.x, mk.z), mk.z, dock.rot, ['#58b4a5', '#fbf3e2'], ['#9bb7c9', '#e0604c', '#5d8fae']).collider);
+      const fishStall = P.stall(b, mk.x, h(mk.x, mk.z), mk.z, dock.rot, ['#58b4a5', '#fbf3e2'], ['#9bb7c9', '#e0604c', '#5d8fae']);
+      w.addCollider(fishStall.collider);
       w.occupy(mk.x, mk.z, 3);
+      w.sign('FISH MARKET', fishStall, { bg: '#d9f0ec' });
+      w.landmark(mk.x, mk.z, "Megan's Fish Market", 'Megan buys fish for 10% extra.', 2);
       const fk = s.clone().addScaledVector(side, 7).addScaledVector(dock.dir, -6);
       const finn = P.house(b, fk.x, h(fk.x, fk.z), fk.z, { w: 4.2, d: 3.8, h: 2.7, wall: '#d8e6e8', roof: '#3f6fa8', rot: dock.rot, roofStyle: 'thatch' });
       w.addCollider(finn.collider);
       w.occupy(fk.x, fk.z, 4.5);
+      w.sign('TACKLE', finn, { bg: '#dfe9f2', w: 1.8 });
+      w.landmark(fk.x, fk.z, "Ross's Tackle Hut", 'Rods and bait. Old Ross gives newcomers a free rod.');
       P.barrel(b, fk.x - 2.6, h(fk.x - 2.6, fk.z + 2.5), fk.z + 2.5);
-      w.spots.marina = { x: mk.x - dock.dir.x * 1.4, z: mk.z - dock.dir.z * 1.4, yaw: dock.rot, wander: 0 };
+      w.spots.marina = { x: mk.x - dock.dir.x * 1.4, z: mk.z - dock.dir.z * 1.4, yaw: dock.rot, wander: 0, reach: 4.4 };
       w.spots.finn = { x: fk.x + dock.dir.x * 3.2 - side.x * 1.2, z: fk.z + dock.dir.z * 3.2 - side.z * 1.2, yaw: dock.rot, wander: 1 };
       w.spots.reyes = { x: s.x + side.x * 2.6, z: s.z + side.z * 2.6, yaw: dock.rot + Math.PI / 2, wander: 0.5 };
 
@@ -747,8 +837,9 @@ const LAYOUTS = {
       const lz = -34;
       const lh = P.lighthouse(b, lx, h(lx, lz) - 0.3, lz, glow);
       w.circle(lx, lz, lh.r);
+      w.landmark(lx, lz, 'Palmora Lighthouse', 'Guides ships home at night. Great view from up here!', 6);
 
-      // Moth's night camp on the west beach
+      // Madison's night camp on the west beach
       const west = w.findShore(-12, 22, -1, 0.35);
       const mx = west.x + 4;
       const mz = west.z - 1.4;
@@ -757,12 +848,13 @@ const LAYOUTS = {
       P.tent(b, mx + 2.5, h(mx + 2.5, mz - 2.5), mz - 2.5, 0.8, '#3a2f6b', '#ffe48a');
       w.circle(mx + 2.5, mz - 2.5, 1.6);
       w.spots.moth = { x: mx + 1.6, z: mz + 1.0, yaw: -2.2, wander: 0 };
+      w.landmark(mx + 2.5, mz - 2.5, "Madison's Camp", 'The night merchant appears here between 7 PM and 7 AM.', 2);
 
       w.spots.mayor = { x: 0, z: -5.2, yaw: 0, wander: 1.5 };
       w.spots.luna = { x: -11.5, z: 2, yaw: Math.PI / 2, wander: 1 };
       w.spots.nana = { x: 11.5, z: 2, yaw: -Math.PI / 2, wander: 1 };
       w.spots.bo = { x: 23.5, z: 14, yaw: -Math.PI / 2, wander: 1.2 };
-      w.spots.coco = { x: -7, z: 11.4, yaw: 0, wander: 0 };
+      w.spots.coco = { x: -7, z: 11.4, yaw: 0, wander: 0, reach: 4.4 };
       w.spots.pip = { x: 4, z: 8, yaw: 0, wander: 7 };
       w.arrival = dock.end.clone();
       w.spawn = new THREE.Vector3(0, 0, 18);
@@ -790,6 +882,8 @@ const LAYOUTS = {
       }
       const shelly = P.house(b, 20, h(20, -6), -6, { w: 4.4, d: 4, h: 2.8, wall: '#e0f6f2', roof: '#ff7f91', rot: -1.2, roofStyle: 'thatch', awning: '#58b4a5' });
       w.addCollider(shelly.collider);
+      w.sign('REEF SHOP', shelly, { bg: '#d9f0ec', w: 2 });
+      w.landmark(20, -6, "Sarah's Reef Shop", 'Coral Rod, bait and reef gear. Sarah buys fish and coral.');
       w.spots.shelly = { x: 16.5, z: -4.6, yaw: -1.2, wander: 1 };
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2;
@@ -807,6 +901,8 @@ const LAYOUTS = {
       }
       const ms = dock.start.clone().addScaledVector(side, -3).addScaledVector(dock.dir, -1.5);
       w.spots.mo = { x: ms.x, z: ms.z, yaw: dock.rot + Math.PI, wander: 0.4 };
+      const mid = dock.start.clone().addScaledVector(dock.dir, 8);
+      w.landmark(mid.x, mid.z, 'Tournament Pier', 'Fishing tournaments run here from 7 AM to 7 PM. Talk to Coach LeBron to enter.', 1);
       w.competitionSpots = [];
       for (let i = 0; i < 3; i++) {
         const p = dock.end.clone().addScaledVector(side, (i - 1) * 2.2).addScaledVector(dock.dir, 0.9);
@@ -846,6 +942,8 @@ const LAYOUTS = {
       const forge = P.house(b, -9, h(-9, 27), 27, { w: 6, d: 5, h: 3.2, wall: '#5a4a48', roof: '#2a2534', trim: '#3a2a28', rot: 0.4, chimney: true, door: '#3a2a28' });
       w.addCollider(forge.collider);
       w.occupy(-9, 27, 6);
+      w.sign("HANK'S FORGE", forge, { bg: '#3a2f33', fg: '#ffb347' });
+      w.landmark(-9, 27, "Hank's Forge", 'Weapons and the Ember Rod. Hank buys treasure.');
       P.campfire(b, -4.5, h(-4.5, 29.5), 29.5, glow); // anvil fire
       w.circle(-4.5, 29.5, 0.7);
       P.barrel(b, -12.5, h(-12.5, 31), 31);
@@ -853,6 +951,9 @@ const LAYOUTS = {
       const sage = P.house(b, 10, h(10, 26), 26, { w: 4.5, d: 4.2, h: 2.8, wall: '#e6d8f0', roof: '#7d5ba6', rot: -0.5, roofStyle: 'thatch' });
       w.addCollider(sage.collider);
       w.occupy(10, 26, 5);
+      w.sign("GRACE'S HUT", sage, { bg: '#e6d8f0', w: 2 });
+      w.landmark(10, 26, "Grace's Hut", 'Health Tonics, magic bait and dragon fruit cuttings.');
+      w.landmark(0, -18, 'Ember Volcano', 'Still active! Its heat draws fiery fish to Ember Isle.', 30);
       w.spots.sage = { x: 7.5, z: 29.5, yaw: -0.5, wander: 1 };
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
@@ -863,7 +964,7 @@ const LAYOUTS = {
       }
       // hot spring (heals)
       P.hotSpring(b, 22, h(22, 40), 40);
-      w.interact({ pos: new THREE.Vector3(22, h(22, 40), 40), r: 3.6, icon: '♨️', priority: 1, label: () => 'Soak in the hot spring (heal)', action: () => w.game.combat.healFull('The hot spring soothes your wounds.') });
+      w.interact({ pos: new THREE.Vector3(22, h(22, 40), 40), r: 3.6, icon: '♨️', priority: 1, tip: { title: 'Hot Spring', desc: 'Step in and press E to heal completely.' }, label: () => 'Soak in the hot spring (heal)', action: () => w.game.combat.healFull('The hot spring soothes your wounds.') });
       // lava in the crater
       const peak = w.def.peaks[0];
       const cy = h(peak.x, peak.z);
@@ -913,6 +1014,7 @@ const LAYOUTS = {
       const sr = P.skullRock(b, -12, h(-12, -14) - 0.5, -14, 1.1);
       w.addCollider(sr.collider);
       w.occupy(-12, -14, 7);
+      w.landmark(-12, -14, 'Skull Rock', 'Blackfin\'s lookout. Creepy...', 5);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + 0.4;
         const x = Math.cos(a) * 9;
@@ -934,8 +1036,10 @@ const LAYOUTS = {
       const wr = P.shipwreck(b, east.x + 1, h(east.x + 1, east.z) - 0.6, east.z, 0.4);
       w.addCollider(wr.collider);
       w.occupy(east.x, east.z, 7);
+      w.landmark(east.x + 1, east.z, 'Shipwreck', 'An old pirate ship that ran aground.', 3);
       w.addCollider(P.stall(b, 4, h(4, 26), 26, Math.PI, ['#2a2534', '#d9534f'], ['#f2c230', '#f2c230']).collider);
-      w.spots.patch = { x: 4, z: 27.6, yaw: 0, wander: 0.6 };
+      w.spots.patch = { x: 4, z: 27.6, yaw: 0, wander: 0.6, reach: 4.4 };
+      w.landmark(0, 0, 'Pirate Camp', 'Captain Blackfin\'s camp. Dangerous!', 2);
       w.pirateSpots = [];
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2;

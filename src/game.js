@@ -6,6 +6,7 @@ import { Sky } from './world/sky.js';
 import { Water } from './world/water.js';
 import { Environment } from './world/environment.js';
 import { Rain, Fireflies, Particles } from './world/effects.js';
+import { FX, itemMesh, emojiSprite } from './world/fx.js';
 import { IslandWorld } from './world/island.js';
 import { Player } from './entities/player.js';
 import { Pet } from './entities/actors.js';
@@ -62,6 +63,7 @@ export class Game {
     this.rain = new Rain(this.scene);
     this.fireflies = new Fireflies(this.scene);
     this.particles = new Particles(this.scene);
+    this.fx = new FX(this);
     this.quests = new QuestSystem(this);
     this.fishing = new FishingSystem(this);
     this.home = new HomeSystem(this);
@@ -81,7 +83,7 @@ export class Game {
     this.resize();
 
     this.events.on('dawn', () => this.mode === 'play' && this.ui.toast('☀️ Good morning! A new day on the islands.', 'info'));
-    this.events.on('nightfall', () => this.mode === 'play' && this.ui.toast('🌙 Night falls. Rare fish stir… and Moth opens shop on the west beach.', 'info'));
+    this.events.on('nightfall', () => this.mode === 'play' && this.ui.toast('🌙 Night falls. Rare fish stir… and Madison opens shop on the west beach.', 'info'));
     this.events.on('newDay', () => {
       if (!this.state) return;
       this.weather.rollDay();
@@ -187,7 +189,7 @@ export class Game {
     this.ui.refreshHud();
     await this.ui.fade(false, 500);
     if (isNew) {
-      this.ui.banner(`Welcome, ${s.name}!`, 'Find Mayor Kalani in the village square.', '🌴');
+      this.ui.banner(`Welcome, ${s.name}!`, 'Find Mayor Mike in the village square.', '🌴');
       this.ui.toast('Tip: Walk with WASD, talk with E. The quest tracker (top-left) shows what to do next.', 'info');
     } else this.ui.banner(`Welcome back, ${s.name}!`, ISLANDS[s.island].name, '🌴');
     this.dailyLogin();
@@ -258,7 +260,7 @@ export class Game {
 
   openTravel(fromNpc = false) {
     if (this.boatTier() === 0) {
-      this.ui.toast('You need a boat! Captain Reyes sells them at the Palmora dock.', 'warn');
+      this.ui.toast('You need a boat! Captain Jack sells them at the Palmora dock.', 'warn');
       if (!fromNpc) return;
     }
     this.ui.openPanel('map', { travel: true, tab: 'chart' });
@@ -461,7 +463,7 @@ export class Game {
     this.state.stats.earned += coins;
     this.state.stats.sold += n;
     if (!quiet) this.audio.sfx('coin');
-    this.events.emit('sell', { item: id, count: n, coins });
+    this.events.emit('sell', { item: id, count: n, coins, shop: shop?.id });
     this.ui.refreshHud();
   }
   buy(e, shop) {
@@ -579,6 +581,11 @@ export class Game {
       } else this.removeItem(RECIPE_ALIASES[k] || k, n);
     }
     this.addItem(r.out, 1);
+    if (this.home.firePos && this.world?.id === 'palmora') {
+      const from = this.home.firePos.clone().setY(this.home.firePos.y + 0.8);
+      this.particles.burst(from, { count: 16, color: '#f4f1e8', speed: 0.8, up: 3, life: 1.2, gravity: -1 });
+      this.fx.collect(emojiSprite(ITEMS[r.out].icon, 0.8), from, { dur: 0.7 });
+    }
     this.state.stats.cooked++;
     this.audio.sfx('harvest');
     this.addXP(12 + r.level * 4);
@@ -713,6 +720,7 @@ export class Game {
     this.rain.update(dt, this.camera.position, env.rain);
     this.fireflies.update(dt, this.t, focus, env.nightAmount * (1 - env.rain), this.world ? (x, z) => this.world.heightAt(x, z) : null);
     this.particles.update(dt);
+    if (this.player) this.fx.update(dt);
     this.world?.update(dt, this.t);
     this.home.updateDecorGlow(env.glow);
 
@@ -768,7 +776,7 @@ export class Game {
       if (this.state.rod) {
         g.ui.setPrompt({ key: 'E', text: 'Cast your line', icon: '🎣' });
         if (g.input.pressed('KeyE')) this.fishing.start();
-      } else g.ui.setPrompt({ key: '—', text: 'You need a fishing rod (see Old Finn)', icon: '🎣' });
+      } else g.ui.setPrompt({ key: '—', text: 'You need a fishing rod (see Old Ross)', icon: '🎣' });
       return;
     }
     g.ui.setPrompt(null);

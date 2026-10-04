@@ -1,4 +1,4 @@
-import { QUESTS, BOUNTY_TEMPLATES } from '../data/quests.js';
+import { QUESTS, BOUNTY_TEMPLATES, BEACH_ITEMS } from '../data/quests.js';
 import { FISH_BY_ID, tierIndex } from '../data/fish.js';
 import { ITEMS } from '../data/items.js';
 import { mulberry32, hashString } from '../core/utils.js';
@@ -80,6 +80,7 @@ export class QuestSystem {
         if (ev !== 'sell') return 0;
         if (t === '*') return d.count;
         if (t.startsWith('type:')) return ITEMS[d.item]?.type === t.slice(5) ? d.count : 0;
+        if (t.startsWith('shop:')) return d.shop === t.slice(5) ? d.count : 0;
         return d.item === t ? d.count : 0;
       }
       case 'talk':
@@ -97,7 +98,11 @@ export class QuestSystem {
       case 'buy':
         return ev === 'buy' && (t === '*' || d.id === t) ? 1 : 0;
       case 'collect':
-        return ev === 'collect' && (t === '*' || d.item === t) ? 1 : 0;
+        if (ev !== 'collect') return 0;
+        if (t === 'beach') return BEACH_ITEMS.includes(d.item) ? 1 : 0;
+        if (t === 'fruit') return ITEMS[d.item]?.type === 'fruit' ? 1 : 0;
+        if (t === '*') return d.item !== 'treasure' && ITEMS[d.item]?.type !== 'fruit' ? 1 : 0;
+        return d.item === t ? 1 : 0;
       case 'compete':
         return ev === 'compete' && d.place <= t ? 1 : 0;
       default:
@@ -271,7 +276,7 @@ export class QuestSystem {
       const obj = q.objectives[st.step];
       if (!obj) continue;
       const count = obj.count ?? 1;
-      out.push({ id, main: !!q.main, title: q.title, text: obj.text, progress: count > 1 ? `${Math.min(st.progress, count)}/${count}` : '', target: obj.type === 'talk' ? obj.target : null });
+      out.push({ id, main: !!q.main, title: q.title, text: obj.text, hint: obj.hint || '', obj, progress: count > 1 ? `${Math.min(st.progress, count)}/${count}` : '', target: obj.type === 'talk' ? obj.target : null });
     }
     out.sort((a, b) => (b.main ? 1 : 0) - (a.main ? 1 : 0));
     return out;

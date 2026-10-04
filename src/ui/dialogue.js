@@ -3,6 +3,7 @@ import { ITEMS } from '../data/items.js';
 import { HEART_REWARDS } from '../data/npcs.js';
 import { QUESTS } from '../data/quests.js';
 import { rewardText } from './panels.js';
+import { SHOPS } from '../data/shops.js';
 
 const GIFT_TYPES = ['fish', 'fruit', 'product', 'collectible', 'treasure', 'material', 'decor'];
 
@@ -26,6 +27,7 @@ export class Dialogue {
     return Math.min(10, Math.floor(this.rel(id).pts / 10));
   }
   fill(text) {
+    if (typeof text === 'object') return { you: this.fill(text.you) };
     return text.replace(/\{name\}/g, this.game.state.name);
   }
 
@@ -55,7 +57,20 @@ export class Dialogue {
     }
     const night = g.time.isNight();
     const pool = (night ? npc.def.greet.night : npc.def.greet.day) || npc.def.greet.day || npc.def.greet.night;
-    this.say([this.fill(pick(pool))], () => this.menu());
+    const lines = [this.fill(pick(pool))];
+    const turnIn = g.quests.canTurnIn(npc.id);
+    const offers = g.quests.offers(npc.id);
+    if (turnIn.length) lines.push('Oh! Did you bring what I asked for? Pick "Hand over" below!');
+    else if (offers.length) lines.push(`Say, ${g.state.name}... could you help me with something? Pick "Request: ${offers[0].title}" below.`);
+    else {
+      // remind the player about this islander's active request
+      const mine = Object.keys(g.state.quests.active).map((id) => QUESTS[id]).find((q) => q.giver === npc.id);
+      if (mine) {
+        const obj = g.quests.currentObjective(mine.id);
+        if (obj) lines.push(`How's "${mine.title}" going? Remember: ${obj.text.charAt(0).toLowerCase() + obj.text.slice(1)}.`);
+      }
+    }
+    this.say(lines, () => this.menu());
   }
 
   close() {
@@ -111,6 +126,14 @@ export class Dialogue {
       return;
     }
     this.optsEl.innerHTML = '';
+    if (typeof text === 'object') {
+      // the player's reply — shown as a speech choice to click / press E
+      clearInterval(this.timer);
+      this.typing = false;
+      this.optsEl.append(el('button', { class: 'btn small reply', html: `<b>${escapeHtml(this.game.state.name)}:</b> “${escapeHtml(text.you)}”`, onclick: () => this.advance() }));
+      requestAnimationFrame(() => this.optsEl.querySelector('button')?.focus({ preventScroll: true }));
+      return;
+    }
     this.optsEl.append(el('button', { class: 'btn small ghost', text: this.pages.length ? 'Next ▸' : 'Continue ▸', onclick: () => this.advance() }));
     this.type(text);
   }
@@ -168,8 +191,8 @@ export class Dialogue {
     const def = npc.def;
     const o = this.optsEl;
     o.innerHTML = '';
-    const opt = (html, fn, cls = '') => {
-      const b = el('button', { class: `btn small ${cls}`, html, onclick: () => { g.audio.sfx('click'); this.inMenu = false; fn(); } });
+    const opt = (html, fn, cls = '', tip = '') => {
+      const b = el('button', { class: `btn small ${cls}`, html, 'data-tip': tip || undefined, onclick: () => { g.audio.sfx('click'); this.inMenu = false; fn(); } });
       o.append(b);
       return b;
     };
@@ -180,7 +203,7 @@ export class Dialogue {
       }, 'primary');
     }
     for (const q of g.quests.offers(npc.id)) {
-      opt(`❔ ${escapeHtml(q.title)}`, () => {
+      opt(`❔ Request: ${escapeHtml(q.title)}`, () => {
         this.say([this.fill(q.offer)], () => {
           this.inMenu = true;
           o.innerHTML = '';
@@ -192,14 +215,46 @@ export class Dialogue {
         });
       }, 'primary');
     }
-    if (def.shop) opt('🛒 Shop', () => { const shop = def.shop; this.close(); g.ui.openPanel('shop', { shop }); }, 'primary');
+    if (def.shop) {
+      opt('🛒 Shop', () => { const shop = def.shop; this.close(); g.ui.openPanel('shop', { shop, tab: 'buy' }); }, 'primary', 'Buy things from this islander');
+      if (SHOPS[def.shop]?.sells.length) opt('🪙 Sell items', () => { const shop = def.shop; this.close(); g.ui.openPanel('shop', { shop, tab: 'sell' }); }, 'primary', `Sells: ${SHOPS[def.shop].sells.join(', ')}`);
+    }
     if (def.services?.includes('travel')) opt('⛵ Set sail', () => { this.close(); g.openTravel(true); });
     if (def.services?.includes('build')) opt('🔨 Upgrade my home', () => { this.close(); g.ui.openPanel('home', { tab: 'upgrade' }); });
     if (def.services?.includes('tournament')) opt('🏆 Tournament', () => { this.close(); g.ui.openPanel('tournament'); }, 'primary');
-    opt('💬 Chat', () => this.chat());
+    opt('💬 Talk', () => this.talkMenu());
+    opt('💡 What should I do?', () => this.advice());
     opt('🎁 Give gift', () => this.gift());
     opt('👋 Bye', () => this.close(), 'ghost');
     requestAnimationFrame(() => o.querySelector('button')?.focus({ preventScroll: true }));
+  }
+
+  talkMenu() {
+    const g = this.game;
+    const npc = this.npc;
+    this.inMenu = true;
+    const o = this.optsEl;
+    o.innerHTML = '';
+    const opt = (html, fn, cls = '') => o.append(el('button', { class: `btn small ${cls}`, html, onclick: () => { g.audio.sfx('click'); this.inMenu = false; fn(); } }));
+    for (const t of npc.def.topics || []) opt(`❓ ${escapeHtml(t.q)}`, () => this.say([{ you: t.q }, ...t.a.map((l) => this.fill(l))], () => this.talkMenu()));
+    opt('😊 Small talk', () => this.chat());
+    opt('◂ Back', () => this.menu(), 'ghost');
+    requestAnimationFrame(() => o.querySelector('button')?.focus({ preventScroll: true }));
+  }
+
+  /** The islander explains your current objective in plain words. */
+  advice() {
+    const g = this.game;
+    const list = g.quests.tracker();
+    const q = list[0];
+    if (!q) {
+      this.say(['You\'re doing great! Try catching rarer fish, cooking fancy meals, or upgrading your home. Check the bounty board in the square for daily jobs!'], () => this.menu());
+      return;
+    }
+    const lines = [{ you: 'What should I do next?' }, `Right now you should: ${q.text}.`];
+    if (q.hint) lines.push(q.hint);
+    lines.push('Follow the yellow arrow on your screen — it points the way. Press J to see all your quests.');
+    this.say(lines, () => this.menu());
   }
 
   chat() {
@@ -211,7 +266,7 @@ export class Dialogue {
       r.chatDay = g.state.time.day;
       this.addPts(npc.id, 3);
     }
-    this.say([line], () => this.menu());
+    this.say([line], () => this.talkMenu());
   }
 
   gift() {

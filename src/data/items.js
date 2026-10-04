@@ -40,7 +40,7 @@ export const ITEMS = {
   berry_jam: { name: 'Berry Jam', icon: '🍯', type: 'product', sell: 52, heal: 15, desc: 'Grandma-approved.' },
   sugar_candy: { name: 'Cane Candy', icon: '🍬', type: 'product', sell: 45, heal: 10, desc: 'Sticky, sweet, addictive.' },
   fruit_salad: { name: 'Tropical Salad', icon: '🥗', type: 'product', sell: 140, heal: 40, desc: 'A rainbow in a bowl.' },
-  fish_taco: { name: 'Fish Taco', icon: '🌮', type: 'product', sell: 95, heal: 45, desc: 'Nana\'s secret recipe.' },
+  fish_taco: { name: 'Fish Taco', icon: '🌮', type: 'product', sell: 95, heal: 45, desc: 'Grandma Rose\'s secret recipe.' },
   mango_smoothie: { name: 'Mango Smoothie', icon: '🥤', type: 'product', sell: 110, heal: 30, desc: 'Blended sunshine.' },
   melon_slush: { name: 'Melon Slush', icon: '🍧', type: 'product', sell: 160, heal: 35, desc: 'Brain freeze guaranteed.' },
   sushi_platter: { name: 'Sushi Platter', icon: '🍣', type: 'product', sell: 260, heal: 70, desc: 'Fresh from the reef.' },

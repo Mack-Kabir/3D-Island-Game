@@ -89,7 +89,7 @@ export function showCreator(game) {
     class: 'btn primary big',
     html: '🌴 Start Adventure',
     onclick: () => {
-      const n = name.trim() || (look.gender === 'f' ? 'Leilani' : 'Kai');
+      const n = name.trim() || (look.gender === 'f' ? 'Emma' : 'Jake');
       deleteSave();
       game.startNewGame(n, look);
     },

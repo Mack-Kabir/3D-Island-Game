@@ -2,6 +2,9 @@ import { el, escapeHtml, formatNum, formatClock } from '../core/utils.js';
 import { RODS_BY_ID, WEAPONS_BY_ID } from '../data/gear.js';
 import { ITEMS } from '../data/items.js';
 import { NPCS } from '../data/npcs.js';
+import { objectiveTarget } from '../systems/guide.js';
+import { QUESTS } from '../data/quests.js';
+import * as THREE from 'three';
 
 export class Hud {
   constructor(ui) {
@@ -12,18 +15,22 @@ export class Hud {
     this.tracker = el('div', { class: 'hud-tracker', role: 'region', 'aria-label': 'Quest tracker' });
     this.topRight = el('div', { class: 'hud-tr' });
     this.money = el('div', { class: 'hud-money' });
-    this.clock = el('div', { class: 'hud-clock plate', role: 'timer', 'aria-label': 'Game clock' });
+    this.clock = el('div', { class: 'hud-clock plate', role: 'timer', 'aria-label': 'Game clock', 'data-tip-title': 'Clock', 'data-tip': 'Night lasts from 7 PM to 7 AM. Rare fish, the night merchant and pirate raids come out at night.' });
     this.mapWrap = el('button', { class: 'hud-minimap', 'aria-label': 'Open map (M)', onclick: () => this.ui.openPanel('map') });
     this.mapCanvas = el('canvas', { width: 150, height: 150 });
     this.mapWrap.append(this.mapCanvas, el('span', { class: 'kbd-hint', text: 'M' }));
     this.topRight.append(this.money, this.clock, this.mapWrap);
     this.menu = el('nav', { class: 'hud-menu', 'aria-label': 'Game menu' });
+    const tips = { bag: 'Your items, gear, Fishdex and stats.', quests: 'Your quests, hints and daily bounties.', map: 'Island map and sea chart.', wardrobe: 'Change clothes, hair and pets.', pause: 'Pause, settings, help and saving.' };
     const btn = (icon, label, key, panel) =>
-      el('button', { class: 'menu-btn', 'aria-label': `${label} (${key})`, title: `${label} (${key})`, onclick: () => this.ui.openPanel(panel) }, [el('span', { class: 'mi', text: icon }), el('span', { class: 'ml', text: label }), el('kbd', { text: key })]);
+      el('button', { class: 'menu-btn', 'aria-label': `${label} (${key})`, 'data-tip-title': `${label} (${key})`, 'data-tip': tips[panel], onclick: () => this.ui.openPanel(panel) }, [el('span', { class: 'mi', text: icon }), el('span', { class: 'ml', text: label }), el('kbd', { text: key })]);
     this.menu.append(btn('🎒', 'Bag', 'I', 'bag'), btn('📜', 'Quests', 'J', 'quests'), btn('🗺️', 'Map', 'M', 'map'), btn('👕', 'Style', 'C', 'wardrobe'), btn('⚙️', 'Menu', 'Esc', 'pause'));
     this.gear = el('div', { class: 'hud-gear' });
     this.controlsHint = el('div', { class: 'hud-controls hint-only', html: '<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>E</kbd> interact · <kbd>F</kbd> attack · drag to look' });
-    h.append(this.profile, this.tracker, this.topRight, this.menu, this.gear, this.controlsHint);
+    this.wp = el('div', { class: 'waypoint hidden', 'aria-hidden': 'true' }, [el('div', { class: 'wp-arrow' }), el('div', { class: 'wp-label' })]);
+    h.append(this.wp, this.profile, this.tracker, this.topRight, this.menu, this.gear, this.controlsHint);
+    this.wpT = 0;
+    this._v = new THREE.Vector3();
     if (this.game.input.isTouch) this.buildTouch(h);
     this.mapT = 0;
   }
@@ -41,11 +48,11 @@ export class Hud {
       portrait,
       el('div', { class: 'pinfo' }, [
         el('div', { class: 'pname' }, [el('span', { text: s.name }), el('span', { class: 'lvl', text: `Lv ${s.level}` })]),
-        el('div', { class: 'bar hp', role: 'meter', 'aria-label': 'Health', 'aria-valuenow': Math.round(s.hp), 'aria-valuemax': maxHp }, [el('i', { style: { width: `${(s.hp / maxHp) * 100}%` } }), el('span', { text: `❤ ${Math.ceil(s.hp)} / ${maxHp}` })]),
-        el('div', { class: 'bar xp', role: 'meter', 'aria-label': 'Experience', 'aria-valuenow': s.xp, 'aria-valuemax': need }, [el('i', { style: { width: `${(s.xp / need) * 100}%` } }), el('span', { text: `✦ ${formatNum(s.xp)} / ${formatNum(need)} XP` })]),
+        el('div', { class: 'bar hp', 'data-tip-title': 'Health', 'data-tip': 'Pirates hurt you. Heal by eating food from your Bag, sleeping, or waiting out of combat.', role: 'meter', 'aria-label': 'Health', 'aria-valuenow': Math.round(s.hp), 'aria-valuemax': maxHp }, [el('i', { style: { width: `${(s.hp / maxHp) * 100}%` } }), el('span', { text: `❤ ${Math.ceil(s.hp)} / ${maxHp}` })]),
+        el('div', { class: 'bar xp', 'data-tip-title': 'Experience', 'data-tip': 'Earn XP from almost everything. Levelling up unlocks better gear, seeds, boats and recipes.', role: 'meter', 'aria-label': 'Experience', 'aria-valuenow': s.xp, 'aria-valuemax': need }, [el('i', { style: { width: `${(s.xp / need) * 100}%` } }), el('span', { text: `✦ ${formatNum(s.xp)} / ${formatNum(need)} XP` })]),
       ]),
     );
-    this.money.innerHTML = `<div class="pill coin" title="Coins"><span aria-hidden="true">🪙</span><b>${formatNum(s.coins)}</b><span class="sr-only">coins</span></div><div class="pill gem" title="Gems"><span aria-hidden="true">💎</span><b>${formatNum(s.gems)}</b><span class="sr-only">gems</span></div>`;
+    this.money.innerHTML = `<div class="pill coin" data-tip-title="Coins" data-tip="Earn coins by selling fish, fruit, shells and cooked food. Spend them on gear, seeds, boats and houses."><span aria-hidden="true">🪙</span><b>${formatNum(s.coins)}</b><span class="sr-only">coins</span></div><div class="pill gem" data-tip-title="Gems" data-tip="Rare currency from new fish species, rare catches, treasure, quests, bounties and tournaments. Buys pets and special items."><span aria-hidden="true">💎</span><b>${formatNum(s.gems)}</b><span class="sr-only">gems</span></div>`;
 
     // quest tracker
     const items = g.quests.tracker().slice(0, 3);
@@ -53,10 +60,11 @@ export class Hud {
     this.tracker.innerHTML = '';
     if (items.length || bounties.length) {
       const box = el('button', { class: 'tracker plate', onclick: () => this.ui.openPanel('quests'), 'aria-label': 'Open quest log (J)' });
-      for (const q of items) {
-        const who = q.target && NPCS[q.target] ? ` <small>· ${escapeHtml(NPCS[q.target].island === g.world?.id ? 'nearby' : 'on ' + cap(NPCS[q.target].island))}</small>` : '';
-        box.append(el('div', { class: `trk ${q.main ? 'main' : ''}`, html: `<div class="trk-title">${q.main ? '★ ' : ''}${escapeHtml(q.title)}</div><div class="trk-obj">${escapeHtml(q.text)} <b>${q.progress}</b>${who}</div>` }));
-      }
+      items.forEach((q, i) => {
+        const who = q.target && NPCS[q.target] && NPCS[q.target].island !== g.world?.id ? ` <small>· on ${escapeHtml(cap(NPCS[q.target].island))}</small>` : '';
+        const hint = i === 0 && q.hint ? `<div class="trk-hint">💡 ${escapeHtml(q.hint)}</div>` : '';
+        box.append(el('div', { class: `trk ${q.main ? 'main' : ''} ${i === 0 ? 'tracked' : ''}`, html: `<div class="trk-title">${q.main ? '★ ' : ''}${escapeHtml(q.title)}</div><div class="trk-obj">➜ ${escapeHtml(q.text)} <b>${q.progress}</b>${who}</div>${hint}` }));
+      });
       for (const b of bounties) box.append(el('div', { class: 'trk bounty', html: `<div class="trk-obj">📋 ${escapeHtml(b.text)} <b>${b.progress}/${b.count}</b></div>` }));
       this.tracker.append(box);
     }
@@ -98,6 +106,82 @@ export class Hud {
       this.drawMinimap();
     }
     this.updateNpcLabels();
+    this.updateWaypoint(dt);
+  }
+
+  /** Yellow arrow that points at the current objective (on screen or at the edge). */
+  updateWaypoint(dt) {
+    const g = this.game;
+    this.wpT -= dt;
+    if (this.wpT <= 0) {
+      this.wpT = 0.25;
+      this.target = null;
+      for (const q of g.quests.tracker()) {
+        const t = objectiveTarget(g, q.obj, QUESTS[q.id]);
+        if (t) {
+          this.target = t;
+          break;
+        }
+      }
+    }
+    const t = this.target;
+    const hide = !t || g.mode !== 'play' || g.isPaused() || g.cam.mode !== 'follow';
+    if (hide) {
+      this.wp.classList.add('hidden');
+      return;
+    }
+    const pos = t.follow ? t.follow.position : t.pos;
+    const p = g.player.pos;
+    const dist = Math.hypot(pos.x - p.x, pos.z - p.z);
+    if (dist < 2.5) {
+      this.wp.classList.add('hidden');
+      return;
+    }
+    this.wp.classList.remove('hidden');
+    const cam = g.camera;
+    const v = this._v.set(pos.x, Math.max(g.world.heightAt(pos.x, pos.z), pos.y, 0) + 2.9, pos.z);
+    const behind = v.clone().applyMatrix4(cam.matrixWorldInverse).z > 0;
+    v.project(cam);
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    let x = (v.x * 0.5 + 0.5) * W;
+    let y = (-v.y * 0.5 + 0.5) * H;
+    if (behind) {
+      x = W - x;
+      y = H - y;
+    }
+    // keep the arrow inside a safe rectangle that avoids the bottom HUD
+    const L = 80;
+    const R = W - 80;
+    const T = 90;
+    const B = H - 150;
+    const onScreen = !behind && x > L && x < R && y > T && y < B;
+    let angle = 90;
+    if (!onScreen) {
+      const cx = (L + R) / 2;
+      const cy = (T + B) / 2;
+      let dx = x - cx;
+      let dy = y - cy;
+      if (Math.abs(dx) + Math.abs(dy) < 1) dy = 1;
+      const k = Math.min((R - L) / 2 / Math.abs(dx || 1e-6), (B - T) / 2 / Math.abs(dy || 1e-6));
+      x = cx + dx * k;
+      y = cy + dy * k;
+      angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      // don't sit on top of the quest tracker in the top-left corner
+      const tr = this.tracker.getBoundingClientRect();
+      if (x < tr.right + 20 && y < tr.bottom + 20) {
+        if (Math.abs(dx) > Math.abs(dy)) y = Math.max(y, tr.bottom + 40);
+        else x = Math.max(x, tr.right + 70);
+      }
+    }
+    this.wp.classList.toggle('edge', !onScreen);
+    this.wp.style.transform = `translate(${x}px, ${y}px)`;
+    this.wp.firstChild.style.transform = `rotate(${angle - 90}deg)`;
+    const label = `${t.label} · ${Math.round(dist)}m`;
+    if (label !== this._wpLabel) {
+      this._wpLabel = label;
+      this.wp.lastChild.textContent = label;
+    }
   }
 
   drawMinimap() {
@@ -166,6 +250,25 @@ export class Hud {
       const [x, y] = toMap(w.homestead.x, w.homestead.z);
       ctx.font = '13px sans-serif';
       ctx.fillText('🏠', x, y);
+    }
+    if (this.target) {
+      const tp = this.target.follow ? this.target.follow.position : this.target.pos;
+      let [x, y] = toMap(tp.x, tp.z);
+      const dx = x - S / 2;
+      const dy = y - S / 2;
+      const r = Math.hypot(dx, dy);
+      if (r > S / 2 - 10) {
+        x = S / 2 + (dx / r) * (S / 2 - 10);
+        y = S / 2 + (dy / r) * (S / 2 - 10);
+      }
+      ctx.font = '16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#f7c95c';
+      ctx.strokeStyle = '#2a2534';
+      ctx.lineWidth = 3;
+      ctx.strokeText('★', x, y);
+      ctx.fillText('★', x, y);
     }
     // player arrow
     ctx.translate(S / 2, S / 2);

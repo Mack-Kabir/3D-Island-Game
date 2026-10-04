@@ -6,6 +6,7 @@ import { COSMETICS } from '../data/cosmetics.js';
 import { Batcher } from '../world/toon.js';
 import * as P from '../world/props.js';
 import { rand, randInt, pick } from '../core/utils.js';
+import { itemMesh } from '../world/fx.js';
 
 /**
  * Homestead (Palmora only): house, farm plots, decorations. Also handles wild
@@ -148,6 +149,8 @@ export class HomeSystem {
       home: true,
       homeHouse: true,
       icon: '🏠',
+      tipH: 2.5,
+      tip: () => ({ title: `Your ${HOUSES[this.s.house.level].name}`, desc: 'Your home! Press E to sleep, cook, change clothes or upgrade.\nBigger homes give you more farm plots.' }),
       label: () => `${HOUSES[this.s.house.level].name} — home menu`,
       action: () => this.game.ui.openPanel('home'),
     });
@@ -158,6 +161,7 @@ export class HomeSystem {
       home: true,
       homeHouse: true,
       icon: '🍳',
+      tip: { title: 'Campfire', desc: 'Cook fish and fruit into food (press E).\nFood sells for much more than raw ingredients and heals you.' },
       label: () => 'Cook at the campfire',
       action: () => this.game.ui.openPanel('cook'),
     });
@@ -185,6 +189,13 @@ export class HomeSystem {
         home: true,
         plot: i,
         icon: p.ready ? '🧺' : p.crop ? '🚿' : '🌱',
+        tipH: 0.4,
+        tip: () => {
+          const pl = this.s.farm.plots[i];
+          if (!pl?.crop) return { title: 'Empty soil patch', desc: 'Press E to plant seeds here.\nBuy seeds from Chloe at the fruit stand.' };
+          const c = CROPS[pl.crop];
+          return { title: c.name, desc: pl.ready ? 'Ripe! Press E to harvest.' : `${this.plotLabel(i)}\n${c.hours}h to grow${c.regrow ? `, then fruits every ${c.regrow}h` : ''}. Water daily for +50% speed.` };
+        },
         label: () => this.plotLabel(i),
         action: () => this.usePlot(i),
       });
@@ -208,7 +219,7 @@ export class HomeSystem {
     if (!p.crop) {
       const seeds = Object.keys(this.s.inventory).filter((id) => ITEMS[id]?.type === 'seed' && this.s.inventory[id] > 0);
       if (!seeds.length) {
-        g.ui.toast('No seeds! Buy some at Coco\'s fruit stand.', 'warn');
+        g.ui.toast('No seeds! Buy some at Chloe\'s fruit stand.', 'warn');
         return;
       }
       g.ui.openPicker({
@@ -234,10 +245,13 @@ export class HomeSystem {
     const c = CROPS[p.crop];
     if (p.ready) {
       const n = randInt(c.yield[0], c.yield[1]);
+      const spot = this.plotPos(i).setY(this.center.y + (c.kind === 'tree' ? 3 : 0.5));
+      for (let k = 0; k < Math.min(n, 4); k++) {
+        g.fx.collect(itemMesh(c.item), spot.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, (Math.random() - 0.5) * 0.6)), { delay: k * 0.12, dur: 0.5, pickup: k === 0 });
+      }
       g.addItem(c.item, n);
       g.ui.toast(`Harvested ${n}× ${ITEMS[c.item].icon} ${ITEMS[c.item].name}`, 'good');
       g.audio.sfx('harvest');
-      g.player.char.play('plant', 0.5);
       g.particles.burst(this.plotPos(i).setY(this.center.y + 0.8), { count: 14, color: c.color, speed: 2, up: 3 });
       this.s.stats.harvested += n;
       g.events.emit('harvest', { crop: p.crop, count: 1 });
@@ -422,17 +436,32 @@ export class HomeSystem {
     ws.trees = ws.trees || {};
     ws.trees[tree.idx] = g.time.abs();
     const n = randInt(1, 3);
-    g.addItem(tree.fruit, n);
     g.audio.sfx('shake');
+    g.player.char.play('swing', 0.4);
     g.particles.burst(tree.pos.clone().setY(tree.pos.y + 3), { count: 18, color: '#6aa86a', speed: 2.5, up: 1, gravity: 4, life: 1.2 });
-    g.ui.toast(`Shook loose ${n}× ${ITEMS[tree.fruit].icon} ${ITEMS[tree.fruit].name}`, 'good');
-    g.events.emit('collect', { item: tree.fruit });
-    g.addXP(2);
+    // fruit tumbles out of the canopy, bounces, then the player picks it up
+    let landed = 0;
+    for (let k = 0; k < n; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const from = tree.pos.clone().add(new THREE.Vector3(Math.cos(a) * 0.9, tree.fruit === 'coconut' ? 5 : 3.2, Math.sin(a) * 0.9));
+      g.fx.drop(itemMesh(tree.fruit), from, world.heightAt(from.x, from.z), {
+        delay: k * 0.15,
+        onDone: () => {
+          g.addItem(tree.fruit, 1, true);
+          g.audio.sfx('pickup');
+          if (++landed === n) {
+            g.ui.itemToast(tree.fruit, n);
+            g.events.emit('collect', { item: tree.fruit });
+            g.addXP(2);
+          }
+        },
+      });
+    }
   }
   dig(world, spot) {
     const g = this.game;
     if (!g.hasItem('shovel')) {
-      g.ui.toast('You need a Shovel — Coco sells them.', 'warn');
+      g.ui.toast('You need a Shovel — Chloe sells them.', 'warn');
       return;
     }
     g.worldState(world.id).dug.push(spot.i);
@@ -442,7 +471,7 @@ export class HomeSystem {
     g.particles.burst(spot.pos.clone().setY(spot.pos.y + 0.3), { count: 24, color: '#d9c08f', speed: 3, up: 4 });
     this.s.stats.dug++;
     g.events.emit('collect', { item: 'treasure' });
-    setTimeout(() => this.treasureLoot(world.id), 600);
+    g.fx.chest(spot.pos.clone(), () => this.treasureLoot(world.id));
   }
   treasureLoot(island) {
     const g = this.game;
