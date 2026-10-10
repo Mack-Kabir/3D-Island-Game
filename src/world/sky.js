@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toon, outlineGeometry, outlineMaterial } from './toon.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { mulberry32 } from '../core/utils.js';
+import { mulberry32 } from '../shared/utils.js';
 
 const skyVert = /* glsl */ `
 varying vec3 vDir;

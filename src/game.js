@@ -1,39 +1,43 @@
 import * as THREE from 'three';
-import { Events } from './core/events.js';
-import { Input } from './core/input.js';
-import { clamp, damp, dampAngle, randInt } from './core/utils.js';
+import { Events } from './shared/events.js';
+import { Input } from './shared/input.js';
+import { clamp, damp, dampAngle, randInt } from './shared/utils.js';
 import { Sky } from './world/sky.js';
 import { Water } from './world/water.js';
 import { Environment } from './world/environment.js';
 import { Rain, Fireflies, Particles } from './world/effects.js';
-import { FX, itemMesh, emojiSprite } from './world/fx.js';
+import { FX } from './world/fx.js';
 import { IslandWorld } from './world/island.js';
-import { Player } from './entities/player.js';
-import { Pet } from './entities/actors.js';
-import { TimeSystem } from './systems/time.js';
-import { Weather } from './systems/weather.js';
-import { AudioSystem } from './systems/audio.js';
-import { QuestSystem } from './systems/quests.js';
-import { FishingSystem } from './systems/fishing.js';
-import { BoatTrip } from './systems/boatfish.js';
-import { FarmTools } from './systems/farmtools.js';
-import { HomeSystem } from './systems/home.js';
-import { CombatSystem } from './systems/combat.js';
-import { Competition } from './systems/competition.js';
-import { newState, saveGame, loadGame, loadSettings, saveSettings } from './systems/save.js';
+import { Player } from './people/player.js';
+import { Pet } from './people/pets.js';
+import { TimeSystem } from './shared/time.js';
+import { Weather } from './world/weather.js';
+import { AudioSystem } from './shared/audio.js';
+import { QuestSystem } from './story/questSystem.js';
+import { FishingSystem } from './fishing/fishing.js';
+import { BoatTrip } from './fishing/boatFishing.js';
+import { Intro } from './story/intro.js';
+import { FarmTools } from './farm/farmTools.js';
+import { HomeSystem } from './home/homestead.js';
+import { CombatSystem } from './combat/combat.js';
+import { Competition } from './fishing/tournament.js';
+import { newState, saveGame, loadGame, loadSettings, saveSettings } from './shared/save.js';
 import { UI } from './ui/ui.js';
-import { Dialogue } from './ui/dialogue.js';
-import { showTitle, showCreator, hideScreens } from './ui/screens.js';
-import { ISLANDS } from './data/islands.js';
-import { ITEMS, RECIPES, RECIPE_ALIASES, ANIMALS, IRRIGATION, FISH_INPUTS, fishFor } from './data/items.js';
-import { FISH, TIERS, tierIndex } from './data/fish.js';
-import { RODS_BY_ID, WEAPONS, WEAPONS_BY_ID, BOATS_BY_ID, PETS_BY_ID } from './data/gear.js';
-import { COSMETICS } from './data/cosmetics.js';
-import { SHOPS } from './data/shops.js';
-import { el } from './core/utils.js';
-
-const NEW_SPECIES_GEMS = { junk: 0, common: 0, uncommon: 1, rare: 2, epic: 4, legendary: 10, mythic: 30 };
-
+import { Dialogue } from './people/dialogue.js';
+import { showTitle, hideScreens } from './ui/screens.js';
+import { ISLANDS } from './world/islands.js';
+import { ITEMS } from './shared/items.js';
+import { ANIMALS } from './farm/animals.js';
+import { IRRIGATION } from './farm/crops.js';
+import { FISH } from './fishing/fish.js';
+import { RODS_BY_ID, BOATS_BY_ID } from './fishing/gear.js';
+import { WEAPONS, WEAPONS_BY_ID } from './combat/weapons.js';
+import { PETS_BY_ID } from './people/pets.js';
+import { COSMETICS } from './people/cosmetics.js';
+import { SHOPS } from './people/shops.js';
+import { el } from './shared/utils.js';
+import { CookingMethods } from './kitchen/cooking.js';
+import { FishingProgressMethods } from './fishing/progress.js';
 export class Game {
   constructor() {
     this.settings = loadSettings();
@@ -70,6 +74,7 @@ export class Game {
     this.fishing = new FishingSystem(this);
     this.boatTrip = new BoatTrip(this);
     this.farmTools = new FarmTools(this);
+    this.intro = new Intro(this);
     this.home = new HomeSystem(this);
     this.combat = new CombatSystem(this);
     this.competition = new Competition(this);
@@ -183,12 +188,22 @@ export class Game {
       const sp = this.world.spawn;
       this.player.teleport(sp.x, sp.z, Math.PI);
     }
-    this.cam.mode = 'follow';
-    this.cam.yaw = this.player.yaw + Math.PI;
-    this.cam.target.copy(this.player.pos);
-    this.mode = 'play';
     this.setPet(s.pet);
     this.quests.refreshBounties();
+    if (isNew) {
+      // washed ashore: play the opening cutscene before handing over control
+      this.mode = 'intro';
+      this.ui.showHud(false);
+      const done = this.intro.start();
+      await this.ui.fade(false, 900);
+      await done;
+    }
+    this.cam.mode = 'follow';
+    this.cam.yaw = this.player.yaw + Math.PI;
+    this.cam.pitch = 0.42;
+    this.cam.curDist = 0;
+    this.cam.target.copy(this.player.pos);
+    this.mode = 'play';
     if (isNew) this.quests.start('m1', true);
     this.quests.refresh();
     this.refreshPortrait();
@@ -196,8 +211,8 @@ export class Game {
     this.ui.refreshHud();
     await this.ui.fade(false, 500);
     if (isNew) {
-      this.ui.banner(`Welcome, ${s.name}!`, 'Find Mayor Mike in the village square.', '🌴');
-      this.ui.toast('Tip: Walk with WASD, talk with E. The quest tracker (top-left) shows what to do next.', 'info');
+      this.ui.banner(`Welcome to Palmora, ${s.name}!`, 'Find Mayor Mike in the village square.', '🌴');
+      this.ui.toast(this.input.isTouch ? 'Tip: Move with the joystick, talk with the action button. The quest tracker (top-left) shows what to do next.' : 'Tip: Walk with WASD, talk with E. The quest tracker (top-left) shows what to do next.', 'info');
     } else this.ui.banner(`Welcome back, ${s.name}!`, ISLANDS[s.island].name, '🌴');
     this.dailyLogin();
     this.save();
@@ -423,46 +438,13 @@ export class Game {
         if (!s.cosmetics.includes(id)) s.cosmetics.push(id);
         this.ui.toast(`👕 New outfit: ${COSMETICS[id].name} — press C to wear it`, 'good');
       }
+    if (r.tent) this.home.pitchTent();
     if (r.buildings) for (const id of r.buildings) this.home.setBuilt(id);
     if (r.animals) for (const [id, n] of Object.entries(r.animals)) for (let i = 0; i < n; i++) this.home.addAnimal(id);
     if (r.flag) s.flags[r.flag] = true;
     if (r.xp) this.addXP(r.xp);
     this.quests.refresh();
     this.ui.refreshHud();
-  }
-
-  recordCatch(f, weight, opts = {}) {
-    const { perfect } = opts;
-    const s = this.state;
-    const dex = s.fishdex[f.id];
-    const isNew = !dex;
-    const record = !!dex && weight > dex.best;
-    s.fishdex[f.id] = { count: (dex?.count || 0) + 1, best: Math.max(dex?.best || 0, weight) };
-    this.addItem('fish_' + f.id, 1, true);
-    if (f.id === 'pearl_oyster' && Math.random() < 0.4) this.addItem('pearl', 1);
-    s.stats.caught++;
-    const xp = TIERS[f.tier].xp + (isNew ? 10 : 0);
-    let perfectBonus = 0;
-    if (perfect && f.tier !== 'junk') {
-      perfectBonus = Math.max(2, Math.round(f.price * 0.2));
-      s.stats.perfect++;
-      this.give({ coins: perfectBonus }, { quiet: true });
-    }
-    this.addXP(xp);
-    if (isNew && NEW_SPECIES_GEMS[f.tier]) this.give({ gems: NEW_SPECIES_GEMS[f.tier] }, { quiet: true });
-    const found = Object.keys(s.fishdex).length;
-    if (isNew && found % 5 === 0) {
-      setTimeout(() => {
-        this.ui.banner('Fishdex Milestone!', `${found} species discovered · +5 gems`, '📘');
-        this.give({ gems: 5 }, { quiet: true });
-      }, 1200);
-    }
-    const points = this.competition.onCatch(f, weight);
-    this.audio.sfx(tierIndex(f.tier) >= 3 ? 'catchRare' : 'catch');
-    if (tierIndex(f.tier) >= 4) this.particles.burst(this.player.pos.clone().setY(this.player.pos.y + 1.5), { count: 50, color: TIERS[f.tier].color, speed: 5, up: 6, life: 1.4 });
-    this.events.emit('catch', { fish: f, weight, night: this.time.isNight(), island: this.world.id, perfect, bait: opts.bait, boat: opts.boat, rod: opts.rod });
-    this.ui.refreshHud();
-    return { isNew, record, xp, perfectBonus, points };
   }
 
   collectPickup(id, pos) {
@@ -594,68 +576,6 @@ export class Game {
       }
       this.ui.banner('Treasure Map!', 'A new ✕ appeared on your map. Grab a shovel!', '🗺️');
     }
-  }
-  ingredientCount(k) {
-    const inv = this.state.inventory;
-    if (FISH_INPUTS[k]) return fishFor(k, inv).reduce((sum, id) => sum + inv[id], 0);
-    return inv[RECIPE_ALIASES[k] || k] || 0;
-  }
-  canCook(r) {
-    return Object.entries(r.inputs).every(([k, n]) => this.ingredientCount(k) >= n);
-  }
-  /**
-   * Which fish to use for a fish input: the player's pick ({ fishId: count }) if it's valid,
-   * otherwise the cheapest fish in the bag.
-   */
-  fishPlan(k, n, pick) {
-    const inv = this.state.inventory;
-    if (pick) {
-      const total = Object.values(pick).reduce((a, b) => a + b, 0);
-      const ok = total === n && Object.entries(pick).every(([id, c]) => c >= 0 && (inv[id] || 0) >= c && FISH_INPUTS[k].test(ITEMS[id] || {}));
-      if (ok) return Object.fromEntries(Object.entries(pick).filter(([, c]) => c > 0));
-    }
-    const plan = {};
-    let left = n;
-    for (const id of fishFor(k, inv)) {
-      const take = Math.min(left, inv[id]);
-      if (take) plan[id] = take;
-      left -= take;
-      if (!left) break;
-    }
-    return left ? null : plan;
-  }
-  /** Cook a recipe once. opts.fish = { anyFish: { fish_sardine: 1 } } chooses the fish to use. */
-  cook(id, opts = {}) {
-    const r = RECIPES.find((x) => x.id === id);
-    if (!r || !this.canCook(r) || this.state.level < r.level) return false;
-    const plans = {};
-    for (const [k, n] of Object.entries(r.inputs)) {
-      if (!FISH_INPUTS[k]) continue;
-      plans[k] = this.fishPlan(k, n, opts.fish?.[k]);
-      if (!plans[k]) return false;
-    }
-    for (const [k, n] of Object.entries(r.inputs)) {
-      if (FISH_INPUTS[k]) for (const [f, c] of Object.entries(plans[k])) this.removeItem(f, c, true);
-      else this.removeItem(RECIPE_ALIASES[k] || k, n, true);
-    }
-    this.addItem(r.out, r.qty || 1, true);
-    if (this.home.firePos && this.world?.id === 'palmora') {
-      const from = this.home.firePos.clone().setY(this.home.firePos.y + 1);
-      this.particles.burst(from, { count: 16, color: '#f4f1e8', speed: 0.8, up: 3, life: 1.2, gravity: -1 });
-      this.fx.collect(emojiSprite(ITEMS[r.out].icon, 0.8), from, { dur: 0.7 });
-    }
-    this.state.stats.cooked++;
-    this.audio.sfx('harvest');
-    // basics (flour, sugar…) give a little XP, real dishes more
-    this.addXP(r.cat === 'basics' ? 4 + r.level : 10 + r.level * 4);
-    this.events.emit('cook', { recipe: r.out });
-    return true;
-  }
-  boatTierOf(id) {
-    return BOATS_BY_ID[id]?.tier ?? 0;
-  }
-  boatTier() {
-    return this.state ? this.boatTierOf(this.state.boat) : 0;
   }
   ownsWeaponAtLeast(id) {
     const min = WEAPONS_BY_ID[id].dmg;
@@ -795,7 +715,7 @@ export class Game {
     if (this.mode === 'title') this.time.update(dt, { title: true });
     else if (playing) this.time.update(dt, { paused });
     this.weather.update(playing ? dt : 0);
-    const hour = this.mode === 'play' ? this.time.hour() : this.time.titleMinutes / 60;
+    const hour = this.mode === 'play' || this.mode === 'intro' ? this.time.hour() : this.time.titleMinutes / 60;
     const focus = this.player && this.mode !== 'title' ? this.player.pos : this.cam.target;
     const env = this.env.update(hour, this.weather.rain, focus);
     this.sky.update(dt, this.camera, { ...env, wind: 1 }, this.t);
@@ -814,6 +734,7 @@ export class Game {
     if (this.player && (playing || this.mode === 'create')) {
       this.player.update(dt);
     }
+    if (this.mode === 'intro') this.intro.update(dt);
     if (playing && !paused) {
       this.fishing.update(dt);
       this.home.updatePlacing();
@@ -891,7 +812,7 @@ export class Game {
       return;
     }
     const p = this.player;
-    if (!p) return;
+    if (!p || c.mode === 'intro') return;
     if (input.mouse.dragging || input.mouse.dx) c.lastDrag = this.t;
     if (c.mode === 'portrait') {
       c.portraitYaw -= input.mouse.dx * 0.008 * sens;
@@ -959,6 +880,7 @@ export class Game {
     cam.lookAt(c.target);
   }
 }
+Object.assign(Game.prototype, CookingMethods, FishingProgressMethods);
 
 /**
  * Distance along `dir` from `from` before the camera would end up inside a building.

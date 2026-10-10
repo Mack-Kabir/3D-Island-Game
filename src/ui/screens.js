@@ -1,7 +1,7 @@
-import { el } from '../core/utils.js';
-import { DEFAULT_LOOKS } from '../data/cosmetics.js';
-import { hasSave, loadGame, deleteSave } from '../systems/save.js';
-import { lookEditor } from './panels.js';
+import { el } from '../shared/utils.js';
+import { hasSave, loadGame, deleteSave } from '../shared/save.js';
+import { lookEditor } from '../people/wardrobePanel.js';
+import { DEFAULT_LOOKS } from '../people/cosmetics.js';
 
 /** Title screen over the live, slowly orbiting island (day/night fast-forward). */
 export function showTitle(game) {

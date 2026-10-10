@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { Terrain } from './terrain.js';
-import { Batcher, toon, inked, G, mat4 } from './toon.js';
+import { Batcher, toon, inked, G } from './toon.js';
 import * as P from './props.js';
-import { mulberry32, smoothstep, hashString, clamp } from '../core/utils.js';
-import { NPCS } from '../data/npcs.js';
-import { NPC, crabModel, gullModel } from '../entities/actors.js';
-import { ITEMS } from '../data/items.js';
+import { boatModel } from '../fishing/models.js';
+import { mulberry32, smoothstep, hashString, clamp } from '../shared/utils.js';
+import { NPCS } from '../people/npcs.js';
+import { NPC } from '../people/npc.js';
+import { crabModel, gullModel } from './critters.js';
+import { ITEMS } from '../shared/items.js';
 import { itemTip } from '../ui/icons.js';
-import { SHOPS } from '../data/shops.js';
-import { BOATS } from '../data/gear.js';
+import { SHOPS } from '../people/shops.js';
+import { BOATS } from '../fishing/gear.js';
 
 const PROP_TIPS = {
   palm: { title: 'Palm tree', desc: 'A tall, shady palm.\nPalms with brown coconuts can be shaken for coconuts (press E).' },
@@ -206,7 +208,7 @@ export class IslandWorld {
   setBoatModel(tier) {
     if (!this.boatGroup) return;
     this.boatGroup.clear();
-    this.boatGroup.add(P.boatModel(tier));
+    this.boatGroup.add(boatModel(tier));
   }
 
   scatterNature(n) {

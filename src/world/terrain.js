@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makeNoise2D, fbm, smoothstep, lerp, clamp } from '../core/utils.js';
+import { makeNoise2D, fbm, smoothstep, lerp, clamp } from '../shared/utils.js';
 import { toon } from './toon.js';
 
 /**

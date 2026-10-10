@@ -1,9 +1,8 @@
 import * as THREE from 'three';
-import { inked, toon, gradientMap, glowTexture } from './toon.js';
-import { TIERS } from '../data/fish.js';
-import { fishSVG } from '../ui/icons.js';
-import { ITEMS } from '../data/items.js';
-import { clamp, lerp } from '../core/utils.js';
+import { inked, toon } from './toon.js';
+import { ITEMS } from '../shared/items.js';
+import { clamp, lerp } from '../shared/utils.js';
+import { fishMesh } from '../fishing/models.js';
 
 const FRUIT_LOOKS = {
   mango: { color: '#f29a2e', sx: 1, sy: 1.25, sz: 1 },
@@ -60,47 +59,6 @@ export function emojiSprite(emoji, size = 0.7) {
   const s = new THREE.Sprite(mat);
   s.scale.setScalar(size);
   return s;
-}
-
-const fishTexCache = new Map();
-/** The catch-card illustration painted onto a texture (cached per species). */
-export function fishTexture(f) {
-  let tex = fishTexCache.get(f.id);
-  if (tex) return tex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 512;
-  tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  const img = new Image();
-  img.onload = () => {
-    c.getContext('2d').drawImage(img, 0, 0, 512, 512);
-    tex.needsUpdate = true;
-  };
-  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fishSVG(f, 512))}`;
-  fishTexCache.set(f.id, tex);
-  return tex;
-}
-
-/**
- * A caught fish: the same hand-drawn art as the catch card on a cut-out card that
- * always turns to face the camera, with a soft rarity glow behind it.
- */
-export function fishMesh(f) {
-  const g = new THREE.Group();
-  const tex = fishTexture(f);
-  const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: gradientMap(), alphaTest: 0.5, side: THREE.DoubleSide, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.45 });
-  const card = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), mat);
-  card.castShadow = false;
-  g.add(card);
-  if (f.tier !== 'junk' && f.tier !== 'common') {
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: TIERS[f.tier].color, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }));
-    glow.scale.setScalar(2.2);
-    glow.position.z = -0.05;
-    g.add(glow);
-  }
-  g.userData.billboard = true;
-  return g;
 }
 
 /** Treasure chest that rises from the sand and pops open. */

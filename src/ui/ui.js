@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { el, escapeHtml } from '../core/utils.js';
+import { el, escapeHtml } from '../shared/utils.js';
 import { Hud } from './hud.js';
 import { PANELS } from './panels.js';
 import { itemIconHTML } from './icons.js';
-import { ITEMS } from '../data/items.js';
+import { ITEMS } from '../shared/items.js';
 
 /**
  * DOM user interface: HUD, panels, toasts, world-space labels and overlays.

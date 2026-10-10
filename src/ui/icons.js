@@ -1,7 +1,7 @@
-import { TIERS } from '../data/fish.js';
-import { ITEMS } from '../data/items.js';
-import { FISH_BY_ID } from '../data/fish.js';
-import { escapeHtml } from '../core/utils.js';
+import { TIERS } from '../fishing/fish.js';
+import { ITEMS } from '../shared/items.js';
+import { FISH_BY_ID } from '../fishing/fish.js';
+import { escapeHtml } from '../shared/utils.js';
 
 const INK = '#2a2534';
 let uid = 0;

@@ -40,14 +40,21 @@ Touch devices get an on-screen joystick and action buttons.
 
 ## Project layout
 
+Code is grouped by feature: everything about fishing lives in `fishing/`, everything about the farm in `farm/`, and so on.
+
 ```
 src/
-  core/      input, events, helpers
-  world/     terrain, ocean, sky, props, island layouts, cel-shading
-  entities/  characters, player, NPCs, pirates, pets
-  systems/   fishing, quests, farming/home, combat, tournament, weather, audio, save
-  ui/        HUD, panels, dialogue, title & character creator, icons
-  data/      fish, items, gear, cosmetics, NPCs, quests, shops, islands
+  main.js, game.js   boot, game loop, camera, saving, coins/XP, buying & selling
+  shared/    item catalogue, input, events, helpers, audio, save files, game clock
+  world/     islands, terrain, ocean, sky, weather, trees & buildings, critters, foraging
+  fishing/   fish, rods & lures, boats, fishing minigame, boat fishing, tournaments
+  farm/      crops, fruit trees, animals, farm buildings, the field, farm tools, feeder
+  kitchen/   recipes, cooking, the recipe book, kitchen models
+  home/      your house & upgrades, tent, decorations, home menu
+  people/    your character, islanders, dialogue, shops, outfits, pets
+  combat/    weapons, pirates, fighting
+  story/     main & side quests, quest log, waypoint guide, opening cutscene
+  ui/        HUD, menus, title & character creator, icons
 ```
 
 All art and audio are generated in code — no external assets.

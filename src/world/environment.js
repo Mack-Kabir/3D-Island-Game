@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, smoothstep } from '../core/utils.js';
+import { clamp, smoothstep } from '../shared/utils.js';
 
 // Hour keyframes for the day/night palette. Night is 19:00 – 07:00.
 const KEYS = [

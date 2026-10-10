@@ -879,3 +879,20 @@ body.farm-tool #scene { cursor: none; }
   .ft-icon { font-size: 1.2rem; }
   .farm-mode { top: auto; bottom: calc(3.6rem + var(--sb)); }
 }
+
+/* ── opening cutscene: washed ashore ── */
+.intro { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
+.intro-bar { position: absolute; left: 0; right: 0; height: 11vh; background: #0d141b; transition: transform 0.9s cubic-bezier(.2, .8, .2, 1); }
+.intro-bar.top { top: 0; transform: translateY(-100%); }
+.intro-bar.bottom { bottom: 0; transform: translateY(100%); }
+.intro.on .intro-bar { transform: none; }
+.intro-cap { position: absolute; left: 50%; bottom: calc(11vh + 1.4rem); transform: translate(-50%, 6px); width: min(720px, calc(100vw - 32px)); text-align: center; color: #fbf3e2; font-family: var(--display); font-size: clamp(1.05rem, 2.6vw, 1.6rem); letter-spacing: 0.02em; text-shadow: 0 2px 0 #14202c, 0 0 18px rgba(0, 0, 0, 0.55); opacity: 0; transition: opacity 0.7s, transform 0.7s; }
+.intro-cap.show { opacity: 1; transform: translate(-50%, 0); }
+.intro-cap.say { font-style: italic; }
+.intro-skip { position: absolute; right: calc(16px + var(--sr, 0px)); top: calc(11vh + 0.8rem); pointer-events: auto; padding: 0.45rem 0.95rem; border: 2px solid rgba(251, 243, 226, 0.7); border-radius: 999px; background: rgba(13, 20, 27, 0.55); color: #fbf3e2; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
+.intro-skip:hover, .intro-skip:focus-visible { background: rgba(13, 20, 27, 0.85); outline: none; border-color: #fbf3e2; }
+@media (max-height: 500px) {
+  .intro-bar { height: 8vh; }
+  .intro-cap { bottom: calc(8vh + 0.8rem); }
+  .intro-skip { top: calc(8vh + 0.6rem); }
+}

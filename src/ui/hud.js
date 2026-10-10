@@ -1,9 +1,10 @@
-import { el, escapeHtml, formatNum, formatClock } from '../core/utils.js';
-import { RODS_BY_ID, WEAPONS_BY_ID } from '../data/gear.js';
-import { ITEMS } from '../data/items.js';
-import { NPCS } from '../data/npcs.js';
-import { objectiveTarget } from '../systems/guide.js';
-import { QUESTS } from '../data/quests.js';
+import { el, escapeHtml, formatNum, formatClock } from '../shared/utils.js';
+import { RODS_BY_ID } from '../fishing/gear.js';
+import { WEAPONS_BY_ID } from '../combat/weapons.js';
+import { ITEMS } from '../shared/items.js';
+import { NPCS } from '../people/npcs.js';
+import { objectiveTarget } from '../story/guide.js';
+import { QUESTS } from '../story/quests.js';
 import * as THREE from 'three';
 
 export class Hud {
