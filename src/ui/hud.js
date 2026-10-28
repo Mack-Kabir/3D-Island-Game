@@ -202,10 +202,16 @@ export class Hud {
     this.wp.style.transform = `translate(${x}px, ${y}px)`;
     this.wpDir.style.transform = `rotate(${angle}deg)`;
     const label = `${t.label} · ${Math.round(dist)}m`;
+    const lab = this.wp.lastChild;
     if (label !== this._wpLabel) {
       this._wpLabel = label;
-      this.wp.lastChild.textContent = label;
+      lab.textContent = label;
+      this._wpHalf = lab.offsetWidth / 2;
     }
+    // slide the label sideways so it never runs off the edge of the screen
+    const half = this._wpHalf || lab.offsetWidth / 2;
+    const shift = Math.max(8 + half - x, Math.min(0, W - 8 - half - x));
+    lab.style.marginLeft = `${Math.round(shift)}px`;
   }
 
   drawMinimap() {

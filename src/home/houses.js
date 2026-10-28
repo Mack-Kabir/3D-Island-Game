@@ -1,11 +1,11 @@
 // Your house: the upgrade ladder from tent to manor, and decorations for your homestead.
 
 export const HOUSES = [
-  { level: 0, name: 'Tent', plots: 4, desc: 'A cozy tent. Better than sand.' },
-  { level: 1, name: 'Beach Hut', plots: 6, cost: { coins: 300, driftwood: 10, stone: 5 }, reqLevel: 2, desc: 'Four walls and a roof!' },
-  { level: 2, name: 'Bungalow', plots: 9, cost: { coins: 1800, driftwood: 30, stone: 20 }, reqLevel: 6, desc: 'A real home with a porch.' },
-  { level: 3, name: 'Island Villa', plots: 12, cost: { coins: 6500, gems: 15, driftwood: 60, stone: 45 }, reqLevel: 11, desc: 'The envy of the archipelago.' },
-  { level: 4, name: 'Seaside Manor', plots: 16, cost: { coins: 18000, gems: 50, driftwood: 100, stone: 90 }, reqLevel: 18, desc: 'Fit for a legend.' },
+  { level: 0, name: 'Tent', desc: 'A cozy tent. Better than sand.' },
+  { level: 1, name: 'Beach Hut', cost: { coins: 300, driftwood: 10, stone: 5 }, reqLevel: 2, desc: 'Four walls and a roof!' },
+  { level: 2, name: 'Bungalow', cost: { coins: 1800, driftwood: 30, stone: 20 }, reqLevel: 6, desc: 'A real home with a porch.' },
+  { level: 3, name: 'Island Villa', cost: { coins: 6500, gems: 15, driftwood: 60, stone: 45 }, reqLevel: 11, desc: 'The envy of the archipelago.' },
+  { level: 4, name: 'Seaside Manor', cost: { coins: 18000, gems: 50, driftwood: 100, stone: 90 }, reqLevel: 18, desc: 'Fit for a legend.' },
 ];
 
 export const DECOR = {

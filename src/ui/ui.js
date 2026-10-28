@@ -93,6 +93,9 @@ export class UI {
         press = null;
         const t = e.target.closest?.(sel);
         if (!t || t.closest(interactive)) return;
+        // pressing a button inside an info row (Buy, Sell, Use…) does that job — it doesn't open the row's details
+        const pressed = e.target.closest(interactive);
+        if (pressed && t.contains(pressed)) return;
         // tapping an info element toggles its details
         if (this._tipFor === t && !this.tipEl.classList.contains('hidden')) this.hideTip(true);
         else show(t);
@@ -502,6 +505,7 @@ export class UI {
     this.panel = null;
     this.panelHost.classList.add('hidden');
     this.panelHost.innerHTML = '';
+    if (this._tipFor && !this._tipFor.isConnected) this.hideTip(true);
     if (!silent) this.game.audio.sfx('close');
     this.game.onPanelChange(false);
     document.getElementById('scene').focus({ preventScroll: true });
@@ -577,6 +581,8 @@ export class UI {
   update(dt) {
     this.updateLabels();
     this.updateWorldTip(dt);
+    // details for something that has since disappeared (sold out, menu redrawn) go away too
+    if (this._tipFor && !this._tipFor.isConnected && !this._worldTip) this.hideTip(true);
     if (this._hudDirty) {
       this._hudDirty = false;
       this.hud.render();

@@ -544,7 +544,7 @@ Object.assign(QUESTS, {
     offer: 'Sweetie, my honey jar is empty! If Bob builds you some bee hives, will you make me a Honey Lemon Tea?',
     objectives: [
       { type: 'construct', target: 'hives', text: 'Get Bob to build Bee Hives', hint: 'Talk to Bob → "Farm buildings" → Bee Hives (level 8). Then buy bees from Chloe.' },
-      { type: 'collect', target: 'honey', count: 1, text: 'Collect honey', hint: 'Bees don\'t need feeding — press E on the hive when honey appears.' },
+      { type: 'collect', target: 'honey', count: 1, text: 'Collect honey', hint: 'No bees yet? Buy a Bee Hive from Chloe at the fruit stand. Bees don\'t need feeding — press E on the hive when honey appears.' },
       { type: 'cook', target: 'honey_tea', count: 1, text: 'Make Honey Lemon Tea', hint: 'Needs 1 honey + 1 lemon (grow a Lemon Tree). Kitchen → Drinks.' },
     ],
     rewards: { coins: 150, xp: 220, gems: 3 },

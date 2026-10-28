@@ -57,7 +57,7 @@ function upgradeTab(ui) {
   const s = g.state;
   const next = g.home.nextHouse();
   const wrap = h('div', { class: 'upgrade' });
-  wrap.append(h('div', { class: 'house-steps' }, HOUSES.map((hs) => h('div', { class: `hstep ${hs.level <= s.house.level ? 'done' : ''} ${next && hs.level === next.level ? 'next' : ''}` }, [h('span', { text: ['⛺', '🛖', '🏠', '🏡', '🏰'][hs.level] }), h('b', { text: hs.name }), h('small', { text: `${hs.plots} plots` })]))));
+  wrap.append(h('div', { class: 'house-steps' }, HOUSES.map((hs) => h('div', { class: `hstep ${hs.level <= s.house.level ? 'done' : ''} ${next && hs.level === next.level ? 'next' : ''}` }, [h('span', { text: ['⛺', '🛖', '🏠', '🏡', '🏰'][hs.level] }), h('b', { text: hs.name }), h('small', { text: hs.level ? `+${hs.level * 15} ❤ max` : 'Starter home' })]))));
   if (!next) {
     wrap.append(empty('Your home is fully upgraded. Legendary!', '🏰'));
     return wrap;

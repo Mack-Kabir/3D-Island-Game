@@ -652,6 +652,7 @@ export class Game {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 2 : 1));
     this.env.sun.castShadow = high;
     this.resize();
+    this.ui.hud?.tickClock(true); // 12/24-hour and real-clock changes show right away
   }
   setCameraMode(mode) {
     this.cam.mode = mode;

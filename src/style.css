@@ -878,6 +878,8 @@ body.farm-tool #scene { cursor: none; }
   .farm-bar { bottom: auto; top: calc(0.5rem + env(safe-area-inset-top, 0px)); left: auto; right: calc(1rem + var(--sr) + 126px); transform: none; padding: 0.2rem; }
   .ft-icon { font-size: 1.2rem; }
   .farm-mode { top: auto; bottom: calc(3.6rem + var(--sb)); }
+  /* messages drop below the farm tool bar instead of covering it */
+  body:has(.farm-bar:not(.hidden)) .toasts { top: calc(4.7rem + env(safe-area-inset-top, 0px)); }
 }
 
 /* ── opening cutscene: washed ashore ── */
